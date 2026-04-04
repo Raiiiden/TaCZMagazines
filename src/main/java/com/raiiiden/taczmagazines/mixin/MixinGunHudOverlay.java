@@ -26,13 +26,7 @@ public class MixinGunHudOverlay {
     @Shadow
     private static int cacheInventoryAmmoCount;
 
-    /**
-     * Replaces TaCZ's inventory ammo scan for magazine-system guns.
-     *
-     * TaCZ's original logic adds `getAmmoCount(slot)` per slot — it never multiplies
-     * by `slot.getCount()`, so a stack of N mags each holding X rounds is counted as X
-     * instead of N×X. We cancel the original and do the correct calculation.
-     */
+    // Replaces TaCZ's inventory ammo scan for magazine-system guns.
     @Inject(method = "handleInventoryAmmo", at = @At("HEAD"), cancellable = true)
     private static void onHandleInventoryAmmo(ItemStack gunItem, Inventory inventory, CallbackInfo ci) {
         if (!(gunItem.getItem() instanceof IGun iGun)) return;

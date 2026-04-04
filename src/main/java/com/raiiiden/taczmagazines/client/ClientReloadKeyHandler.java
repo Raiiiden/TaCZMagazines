@@ -10,6 +10,7 @@ import com.tacz.guns.client.input.ReloadKey;
 import com.tacz.guns.util.InputExtraCheck;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
@@ -38,15 +39,23 @@ public class ClientReloadKeyHandler {
         if (!(gun.getItem() instanceof IGun iGun)) return false;
         if (iGun.useInventoryAmmo(gun)) return false;
 
+        // Only intercept for magazine-type guns that have a family registered.
+        // Non-magazine guns (shotguns, etc.) should pass through to TaCZ normally.
+        ResourceLocation gunId = iGun.getGunId(gun);
+        com.tacz.guns.resource.index.CommonGunIndex gunIndex =
+                com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId).orElse(null);
+        if (gunIndex == null) return false;
+        if (!gunIndex.getGunData().getReloadData().getType()
+                .equals(com.tacz.guns.resource.pojo.data.gun.FeedType.MAGAZINE)) return false;
+        if (com.raiiiden.taczmagazines.magazine.MagazineFamilySystem.getFamilyForGun(gunId) == null) return false;
+
         keyDown = true;
         keyDownAt = System.currentTimeMillis();
         inSelectorMode = false;
         cancelled = false;
         serverBlocked = true;
 
-        // Block immediately — prevents dropAllAmmo firing during tap or hold window.
         PacketHandler.CHANNEL.sendToServer(new OpenSelectorPacket(true));
-
         return true;
     }
 

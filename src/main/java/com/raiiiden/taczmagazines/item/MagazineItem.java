@@ -162,14 +162,8 @@ public class MagazineItem extends Item implements IAmmoBox {
         return magazine;
     }
 
-    /**
-     * Called when another item (the cursor stack) is right-clicked onto a slot containing
-     * this magazine.  This implements "hold ammo, right-click the magazine slot to fill it."
-     *
-     * Unloading: hold nothing (empty cursor), right-click the mag slot → dumps one stack
-     * of ammo from the magazine onto the cursor is NOT needed here; players can just use
-     * the normal drag-to-empty-slot mechanic via overrideStackedOnOther if desired.
-     */
+    // Called when another item (the cursor stack) is right-clicked onto a slot containing this magazine.  This implements "hold ammo, right-click the magazine slot to fill it."
+    // Unloading: hold nothing (empty cursor), right-click the mag slot → dumps one stack of ammo from the magazine onto the cursor is NOT needed here; players can just use the normal drag-to-empty-slot mechanic via overrideStackedOnOther if desired.
     @Override
     public boolean overrideOtherStackedOnMe(ItemStack magazine, ItemStack heldStack,
                                              Slot slot, ClickAction action,
@@ -358,11 +352,7 @@ public class MagazineItem extends Item implements IAmmoBox {
 
     // ========== RIGHT-CLICK TO UNLOAD ==========
 
-    /**
-     * Right-clicking a magazine while holding it in hand dumps its ammo into the
-     * player's inventory as loose ammo items (up to a full stack at a time).
-     * The magazine is left empty.
-     */
+    // Right-clicking a magazine while holding it in hand dumps its ammo into the player's inventory as loose ammo items (up to a full stack at a time). The magazine is left empty.
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack heldStack = player.getItemInHand(hand);

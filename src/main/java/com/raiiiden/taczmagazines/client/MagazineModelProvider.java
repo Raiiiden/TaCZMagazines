@@ -18,15 +18,8 @@ import net.minecraftforge.fml.common.Mod;
 
 import java.util.List;
 
-/**
- * Replaces the baked magazine item model with a thin wrapper whose only job is to
- * return isCustomRenderer() = true so Minecraft routes all magazine rendering through
- * MagazineItemRenderer (our BEWLR that draws the gun's magazine bone).
- *
- * The magazine.json model file uses "parent": "builtin/entity" (same as TaCZ guns) so
- * the PoseStack arriving at renderByItem() is in the same coordinate state that TaCZ's
- * own gun BEWLR expects.
- */
+// Replaces the baked magazine item model with a thin wrapper whose only job is to return isCustomRenderer() = true so Minecraft routes all magazine rendering through MagazineItemRenderer (our BEWLR that draws the gun's magazine bone).
+// The magazine.json model file uses "parent": "builtin/entity" (same as TaCZ guns) so the PoseStack arriving at renderByItem() is in the same coordinate state that TaCZ's own gun BEWLR expects.
 @Mod.EventBusSubscriber(modid = TaCZMagazines.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class MagazineModelProvider {
 

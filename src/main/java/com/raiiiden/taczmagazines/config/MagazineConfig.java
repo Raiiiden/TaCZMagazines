@@ -101,9 +101,7 @@ public class MagazineConfig {
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, COMMON_SPEC);
     }
 
-    /**
-     * Gets the model name for a given capacity
-     */
+    // Gets the model name for a given capacity
     public static String getModelForCapacity(int capacity) {
         for (Map.Entry<CapacityRange, ForgeConfigSpec.ConfigValue<String>> entry : CAPACITY_MODEL_MAP.entrySet()) {
             if (entry.getKey().contains(capacity)) {
