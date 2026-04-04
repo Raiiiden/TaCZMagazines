@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "com.raiiiden.taczmagazines.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "mixins.taczmagazines.refmap.json",
+  "mixins": [
+    "MixinAbstractGunItem"
+  ],
+  "client": [
+    "MixinReloadKey",
+    "MixinGunHudOverlay"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "minVersion": "0.8"
+}
