@@ -10,10 +10,10 @@ issueTrackerURL=""
 
 [[mods]] #mandatory
 modId="taczmagazines" #mandatory
-version="0.0.1" #mandatory
+version="0.0.4" #mandatory
 displayName="TaCZ: Magazines" #mandatory
 updateJSONURL=""
-displayURL="https://www.curseforge.com/minecraft/mc-mods/_curseslug_"
+displayURL="https://www.curseforge.com/minecraft/mc-mods/taczmagazines"
 logoFile=""
 credits=""
 authors="Raiiiden"

@@ -337,7 +337,40 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         ResourceLocation texture = display.getModelTexture();
         if (texture == null)  { permanentFailures.add(gunId); return null; }
 
-        return new MagazineRenderData(model, magazineNode, texture);
+        // Deep-copy the node so TaCZ's animation state never touches our render tree
+        BedrockPart ownedNode = deepCopy(magazineNode);
+
+        return new MagazineRenderData(model, ownedNode, texture);
+    }
+
+    // Deep Copy Method
+    private static BedrockPart deepCopy(BedrockPart src) {
+        BedrockPart copy = new BedrockPart(src.name);
+
+        copy.x = src.x;
+        copy.y = src.y;
+        copy.z = src.z;
+        copy.xRot = src.xRot;
+        copy.yRot = src.yRot;
+        copy.zRot = src.zRot;
+        copy.offsetX = src.offsetX;
+        copy.offsetY = src.offsetY;
+        copy.offsetZ = src.offsetZ;
+        copy.xScale = src.xScale;
+        copy.yScale = src.yScale;
+        copy.zScale = src.zScale;
+        copy.visible = src.visible;
+        copy.additionalQuaternion = new org.joml.Quaternionf(src.additionalQuaternion);
+
+        // Cubes are geometry-only, they have no animation state — safe to share
+        copy.cubes.addAll(src.cubes);
+
+        // Recursively deep-copy children
+        for (BedrockPart child : src.children) {
+            copy.children.add(deepCopy(child));
+        }
+
+        return copy;
     }
 
     // =========================================================================
