@@ -2,6 +2,7 @@ package com.raiiiden.taczmagazines.capability;
 
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.capabilities.Capability;
 import net.minecraftforge.common.capabilities.CapabilityManager;
 import net.minecraftforge.common.capabilities.CapabilityToken;
@@ -12,16 +13,21 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public class GunMagazineProvider implements ICapabilityProvider, INBTSerializable<CompoundTag> {
-    public static final Capability<GunMagazineCapability> GUN_MAGAZINE = CapabilityManager.get(new CapabilityToken<>() {});
+    public static final Capability<GunMagazineCapability> GUN_MAGAZINE =
+            CapabilityManager.get(new CapabilityToken<>() {});
 
-    private final GunMagazineCapability capability = new GunMagazineCapability();
-    private final LazyOptional<GunMagazineCapability> holder = LazyOptional.of(() -> capability);
+    private final GunMagazineCapability capability;
+    private final LazyOptional<GunMagazineCapability> holder;
+
+    public GunMagazineProvider(ItemStack gunStack) {
+        this.capability = new GunMagazineCapability(gunStack);
+        this.holder = LazyOptional.of(() -> capability);
+    }
 
     @Override
-    public @NotNull <T> LazyOptional<T> getCapability(@NotNull Capability<T> cap, @Nullable Direction side) {
-        if (cap == GUN_MAGAZINE) {
-            return holder.cast();
-        }
+    public @NotNull <T> LazyOptional<T> getCapability(@NotNull Capability<T> cap,
+                                                      @Nullable Direction side) {
+        if (cap == GUN_MAGAZINE) return holder.cast();
         return LazyOptional.empty();
     }
 

@@ -6,7 +6,10 @@
   "mixins": [
     "MixinAbstractGunItem"
   ],
-  "client": [],
+  "client": [
+    "MixinReloadKey",
+    "MixinGunHudOverlay"
+  ],
   "injectors": {
     "defaultRequire": 1
   },

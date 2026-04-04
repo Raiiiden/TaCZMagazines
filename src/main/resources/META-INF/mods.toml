@@ -10,14 +10,14 @@ issueTrackerURL=""
 
 [[mods]] #mandatory
 modId="taczmagazines" #mandatory
-version="0.1.2" #mandatory
-displayName="TaCZ: Blueprints" #mandatory
+version="0.0.1" #mandatory
+displayName="TaCZ: Magazines" #mandatory
 updateJSONURL=""
 displayURL="https://www.curseforge.com/minecraft/mc-mods/_curseslug_"
 logoFile=""
 credits=""
 authors="Raiiiden"
-description='''Blueprint/research system for TaCZ'''
+description='''Magazine system for TaCZ'''
 
 [[dependencies.taczmagazines]]
 modId="forge"
