@@ -8,7 +8,8 @@
   ],
   "client": [
     "MixinReloadKey",
-    "MixinGunHudOverlay"
+    "MixinGunHudOverlay",
+    "MixinClientGunTooltip"
   ],
   "injectors": {
     "defaultRequire": 1

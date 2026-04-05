@@ -146,8 +146,9 @@ dependencies {
     implementation "curse.maven:kotlin-for-forge-351264:5402061"
     implementation fg.deobf("curse.maven:yacl-667299:6336646")
 
-    // implementation fg.deobf("curse.maven:lootr-361276:6961345")
+    // implementation fg.deobf("curse.maven:tacz-additions-1356005:7085167")
     // implementation fg.deobf("curse.maven:configured-457570:5180900")
+    // implementation fg.deobf("curse.maven:lootr-361276:6961345")
     // implementation fg.deobf("curse.maven:maxstuff-1199923:6624536")
     // implementation fg.deobf("curse.maven:tacz-endless-ammo-1166149:6623002")
     // implementation fg.deobf("curse.maven:yungs-better-strongholds-465575:4769083")

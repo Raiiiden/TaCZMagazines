@@ -35,19 +35,14 @@ public class MagazineRegistrar {
             () -> new MagazineItem(new Item.Properties().stacksTo(1))
     );
 
+    public static final RegistryObject<Item> TAB_ICON = ITEMS.register("tab_icon",
+            () -> new Item(new Item.Properties())
+    );
+
     public static final RegistryObject<CreativeModeTab> MAGAZINE_TAB = CREATIVE_MODE_TABS.register("magazines",
             () -> CreativeModeTab.builder()
                     .title(Component.literal("TaCZ Magazines"))
-                    .icon(() -> {
-                        if (!ALL_MAGAZINE_FAMILIES.isEmpty()) {
-                            return MagazineItem.createMagazineByFamily(
-                                    MAGAZINE.get(),
-                                    ALL_MAGAZINE_FAMILIES.get(0),
-                                    0
-                            );
-                        }
-                        return new ItemStack(MAGAZINE.get());
-                    })
+                    .icon(() -> new ItemStack(TAB_ICON.get()))
                     .displayItems((params, output) -> {
                         // Group magazines by ammo type
                         Map<String, Set<Integer>> familiesByAmmo = MagazineFamilySystem.getAllMagazineFamiliesWithCapacities();
