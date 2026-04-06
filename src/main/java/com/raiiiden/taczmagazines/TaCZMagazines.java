@@ -43,6 +43,12 @@ public class TaCZMagazines {
     FMLJavaModLoadingContext.get().getModEventBus().addListener(this::registerCapabilities);
     MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
     MinecraftForge.EVENT_BUS.addListener(this::onDatapackSync);
+
+    // Register the client-side RecipesUpdatedEvent listener at startup so it fires even
+    // when connecting to a dedicated server (OnDatapackSyncEvent only fires server-side).
+    DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
+            () -> () -> MinecraftForge.EVENT_BUS.addListener(
+                    com.raiiiden.taczmagazines.client.ClientRecipeSorter::onRecipesUpdated));
   }
 
   private void commonSetup(FMLCommonSetupEvent event) {
@@ -78,9 +84,5 @@ public class TaCZMagazines {
     // ServerLifecycleHooks.getCurrentServer() returns null on the logical client during
     // singleplayer before the integrated server starts, so guard against null.
     GunsmithIntegration.setup(ServerLifecycleHooks.getCurrentServer());
-
-    DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
-            () -> () -> MinecraftForge.EVENT_BUS.addListener(
-                    com.raiiiden.taczmagazines.client.ClientRecipeSorter::onRecipesUpdated));
   }
 }

@@ -1,6 +1,9 @@
 package com.raiiiden.taczmagazines.client;
 
 import com.raiiiden.taczmagazines.TaCZMagazines;
+import com.raiiiden.taczmagazines.config.GunOverrideConfig;
+import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
+import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.init.ModRecipe;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
@@ -17,6 +20,20 @@ import java.util.*;
 public class ClientRecipeSorter {
 
     public static void onRecipesUpdated(RecipesUpdatedEvent event) {
+        // On a dedicated server the client never fires OnDatapackSyncEvent, so we must
+        // discover magazine families here instead to populate the creative tab and workbench.
+        // On a dedicated server, CommonNetworkCache may still be empty here (gun pack sync
+        // packet is play-phase and arrives after login). If discovery finds nothing, schedule
+        // a deferred retry via MagazineLoadingHandler's tick loop.
+        MagazineFamilySystem.discoverMagazineFamilies();
+        GunOverrideConfig.apply();
+        GunsmithIntegration.injectTabClientSide();
+
+        if (MagazineFamilySystem.getAllFamilies().isEmpty()) {
+            TaCZMagazines.LOGGER.info("[ClientRecipeSorter] No families yet — scheduling deferred discovery");
+            MagazineLoadingHandler.scheduleDeferredDiscovery();
+        }
+
         RecipeManager rm = event.getRecipeManager();
         try {
             Field recipesField = RecipeManager.class.getDeclaredField("recipes");

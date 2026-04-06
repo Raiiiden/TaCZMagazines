@@ -2,6 +2,7 @@ package com.raiiiden.taczmagazines.magazine;
 
 import com.raiiiden.taczmagazines.TaCZMagazines;
 import com.tacz.guns.resource.CommonAssetsManager;
+import com.tacz.guns.resource.ICommonResourceProvider;
 import com.tacz.guns.resource.index.CommonGunIndex;
 import com.tacz.guns.resource.pojo.data.gun.FeedType;
 import net.minecraft.resources.ResourceLocation;
@@ -31,9 +32,12 @@ public class MagazineFamilySystem {
         EXT_LEVEL_MAP.clear();
         GUN_TO_EXT_FAMILIES.clear();
 
-        CommonAssetsManager assetsManager = CommonAssetsManager.getInstance();
-        if (assetsManager == null) {
-            TaCZMagazines.LOGGER.warn("Cannot discover magazine families - CommonAssetsManager is null");
+        // Use get() instead of getInstance() so that on a dedicated-server client the
+        // CommonNetworkCache (populated via ServerMessageSyncGunPack) is used rather
+        // than CommonAssetsManager.INSTANCE which is only set server-side.
+        ICommonResourceProvider assetsManager = CommonAssetsManager.get();
+        if (assetsManager.getAllGuns().isEmpty()) {
+            TaCZMagazines.LOGGER.warn("Cannot discover magazine families - no gun data available yet");
             return;
         }
 
@@ -259,7 +263,7 @@ public class MagazineFamilySystem {
     public static ResourceLocation getAmmoTypeForFamily(String familyId) {
         ResourceLocation repGun = FAMILY_REPRESENTATIVE.get(familyId);
         if (repGun != null) {
-            CommonGunIndex index = CommonAssetsManager.getInstance().getGunIndex(repGun);
+            CommonGunIndex index = CommonAssetsManager.get().getGunIndex(repGun);
             if (index != null && index.getGunData() != null) {
                 return index.getGunData().getAmmoId();
             }

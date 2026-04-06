@@ -37,6 +37,12 @@ public class GunsmithIntegration {
         injectRecipes(server.getRecipeManager(), buildGunTypeMap(server.getRecipeManager()));
     }
 
+    // Called client-side on RecipesUpdatedEvent so the workbench tab appears when
+    // connecting to a dedicated server (setup() only runs server-side in that case).
+    public static void injectTabClientSide() {
+        injectTab();
+    }
+
     // -------------------------------------------------------------------------
     // Tab injection
     // -------------------------------------------------------------------------

@@ -1,7 +1,9 @@
 package com.raiiiden.taczmagazines.client;
 
 import com.raiiiden.taczmagazines.TaCZMagazines;
+import com.raiiiden.taczmagazines.config.GunOverrideConfig;
 import com.raiiiden.taczmagazines.config.MechanicsConfig;
+import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.raiiiden.taczmagazines.network.BulletTransferPacket;
@@ -10,6 +12,7 @@ import com.raiiiden.taczmagazines.network.UnloadGunMagPacket;
 import com.tacz.guns.api.DefaultAssets;
 import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IGun;
+import com.tacz.guns.resource.CommonAssetsManager;
 import com.tacz.guns.util.InputExtraCheck;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
@@ -28,6 +31,17 @@ import org.lwjgl.glfw.GLFW;
 
 @Mod.EventBusSubscriber(modid = TaCZMagazines.MODID, value = Dist.CLIENT)
 public class MagazineLoadingHandler {
+
+    // ── Deferred discovery (dedicated server) ─────────────────────────────────
+    // On a dedicated server, CommonNetworkCache is populated by a play-phase packet
+    // (ServerMessageSyncGunPack) that arrives AFTER RecipesUpdatedEvent fires.
+    // We watch each tick until gun data is available, then run discovery.
+
+    private static boolean pendingDiscovery = false;
+
+    public static void scheduleDeferredDiscovery() {
+        pendingDiscovery = true;
+    }
 
     // ── Session state ─────────────────────────────────────────────────────────
 
@@ -73,7 +87,24 @@ public class MagazineLoadingHandler {
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || !active) return;
+        if (event.phase != TickEvent.Phase.END) return;
+
+        // Deferred discovery: wait for TaCZ's CommonNetworkCache to be populated
+        // (happens when ServerMessageSyncGunPack arrives, which is a play-phase packet)
+        if (pendingDiscovery && MagazineFamilySystem.getAllFamilies().isEmpty()) {
+            if (!CommonAssetsManager.get().getAllGuns().isEmpty()) {
+                pendingDiscovery = false;
+                MagazineFamilySystem.discoverMagazineFamilies();
+                GunOverrideConfig.apply();
+                GunsmithIntegration.injectTabClientSide();
+                MagazineItemRenderer.invalidateCache();
+                TaCZMagazines.LOGGER.info("[MagazineLoadingHandler] Deferred client discovery complete");
+            }
+            return;
+        }
+        pendingDiscovery = false; // families found, no longer needed
+
+        if (!active) return;
 
         Minecraft mc     = Minecraft.getInstance();
         LocalPlayer player = mc.player;
