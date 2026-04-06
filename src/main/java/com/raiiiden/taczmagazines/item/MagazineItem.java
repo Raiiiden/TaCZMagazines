@@ -123,18 +123,25 @@ public class MagazineItem extends Item implements IAmmoBox {
 
     @Override
     public boolean isAmmoBoxOfGun(ItemStack gun, ItemStack magazine) {
-        if (!(gun.getItem() instanceof IGun iGun)) {
-            return false;
-        }
+        if (!(gun.getItem() instanceof IGun iGun)) return false;
 
         ResourceLocation gunId = iGun.getGunId(gun);
         String magazineFamilyId = getMagazineFamilyId(magazine);
 
-        if (magazineFamilyId == null) {
-            return false;
+        if (magazineFamilyId == null) return false;
+        if (!MagazineFamilySystem.isMagazineCompatibleWithGun(magazineFamilyId, gunId)) return false;
+
+        // Extended mags require the gun to have the corresponding attachment installed.
+        // Smaller mags (normal or lower ext level) are always allowed regardless of attachment.
+        if (MagazineFamilySystem.isExtendedFamily(magazineFamilyId)) {
+            int required = MagazineFamilySystem.getExtLevelForFamily(magazineFamilyId);
+            var gunIndexOpt = com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId);
+            if (!gunIndexOpt.isPresent()) return false;
+            int installed = com.tacz.guns.util.AttachmentDataUtils.getMagExtendLevel(gun, gunIndexOpt.get().getGunData());
+            return installed >= required;
         }
 
-        return MagazineFamilySystem.isMagazineCompatibleWithGun(magazineFamilyId, gunId);
+        return true;
     }
 
     @Override

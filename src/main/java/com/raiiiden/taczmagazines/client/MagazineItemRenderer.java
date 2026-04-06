@@ -45,8 +45,14 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
             ResourceLocation texture
     ) {}
 
+    // Normal mag cache — unchanged from original
     private final Map<ResourceLocation, MagazineRenderData> renderCache = new HashMap<>();
     private final Set<ResourceLocation> permanentFailures = new HashSet<>();
+
+    // Extended mag cache — keyed by (gunId, extLevel), completely separate
+    private record ExtCacheKey(ResourceLocation gunId, int extLevel) {}
+    private final Map<ExtCacheKey, MagazineRenderData> extRenderCache = new HashMap<>();
+    private final Set<ExtCacheKey> extPermanentFailures = new HashSet<>();
 
     private static Field magazineNodeField;
     private static boolean reflectionInitialized = false;
@@ -74,6 +80,8 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         if (INSTANCE != null) {
             INSTANCE.renderCache.clear();
             INSTANCE.permanentFailures.clear();
+            INSTANCE.extRenderCache.clear();
+            INSTANCE.extPermanentFailures.clear();
         }
     }
 
@@ -90,10 +98,15 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         String familyId = MagazineItem.getMagazineFamilyId(stack);
         if (familyId == null) return;
 
+        boolean isExtended = MagazineFamilySystem.isExtendedFamily(familyId);
+        int extLevel = isExtended ? MagazineFamilySystem.getExtLevelForFamily(familyId) : 0;
+
         ResourceLocation repGunId = MagazineFamilySystem.getRepresentativeGun(familyId);
         if (repGunId == null) return;
 
-        MagazineRenderData data = getRenderData(repGunId);
+        MagazineRenderData data = isExtended
+                ? getExtRenderData(repGunId, extLevel)
+                : getRenderData(repGunId);
         if (data == null) return;
 
         BedrockPart mag = data.magazineNode();
@@ -111,11 +124,12 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         List<BedrockPart> subtree = new ArrayList<>();
         collectSubtree(mag, subtree);
         boolean[] savedVisible = new boolean[subtree.size()];
+
         for (int i = 0; i < subtree.size(); i++) {
             BedrockPart part = subtree.get(i);
             savedVisible[i] = part.visible;
             String name = part.name != null ? part.name.toLowerCase(Locale.ROOT) : "";
-            if (name.contains("extend") || name.contains("drum") || name.contains("max")) {
+            if (!isExtended && (name.contains("extend") || name.contains("drum") || name.contains("max"))) {
                 part.visible = false;
             } else if (isBulletBone(name)) {
                 // Override TaCZ animation state — use the magazine's own ammo count,
@@ -290,7 +304,6 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         ps.popPose();
     }
 
-    // Collects the bone and all its descendants into {@code out}.
     private void collectSubtree(BedrockPart part, List<BedrockPart> list) {
         list.add(part);
         for (BedrockPart child : part.children) {
@@ -299,7 +312,7 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
     }
 
     // =========================================================================
-    // Render-data cache
+    // Render-data cache — normal mags (unchanged from original)
     // =========================================================================
 
     private MagazineRenderData getRenderData(ResourceLocation gunId) {
@@ -327,7 +340,7 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         BedrockGunModel model = display.getGunModel();
         if (model == null)    { permanentFailures.add(gunId); return null; }
 
-        BedrockPart magazineNode = findMagazineNode(model);
+        BedrockPart magazineNode = findMagazineNode(model, 0);
         if (magazineNode == null) {
             TaCZMagazines.LOGGER.warn("[MagazineItemRenderer] No magazine bone found for gun '{}', skipping", gunId);
             permanentFailures.add(gunId);
@@ -337,9 +350,52 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         ResourceLocation texture = display.getModelTexture();
         if (texture == null)  { permanentFailures.add(gunId); return null; }
 
-        // Deep-copy the node so TaCZ's animation state never touches our render tree
         BedrockPart ownedNode = deepCopy(magazineNode);
+        return new MagazineRenderData(model, ownedNode, texture);
+    }
 
+    // =========================================================================
+    // Render-data cache — extended mags (separate, no impact on normal path)
+    // =========================================================================
+
+    private MagazineRenderData getExtRenderData(ResourceLocation gunId, int extLevel) {
+        ExtCacheKey key = new ExtCacheKey(gunId, extLevel);
+        if (extPermanentFailures.contains(key)) return null;
+
+        MagazineRenderData cached = extRenderCache.get(key);
+        if (cached != null) return cached;
+
+        MagazineRenderData data = buildExtRenderData(gunId, extLevel);
+        if (data != null) {
+            extRenderCache.put(key, data);
+            TaCZMagazines.LOGGER.info("[MagazineItemRenderer] Cached extended bone '{}' for gun '{}' level {}",
+                    data.magazineNode().name, gunId, extLevel);
+        } else {
+            extPermanentFailures.add(key);
+        }
+        return data;
+    }
+
+    private MagazineRenderData buildExtRenderData(ResourceLocation gunId, int extLevel) {
+        Optional<ClientGunIndex> indexOpt = TimelessAPI.getClientGunIndex(gunId);
+        if (!indexOpt.isPresent()) return null;
+
+        GunDisplayInstance display = indexOpt.get().getDefaultDisplay();
+        if (display == null) return null;
+
+        BedrockGunModel model = display.getGunModel();
+        if (model == null) return null;
+
+        ResourceLocation texture = display.getModelTexture();
+        if (texture == null) return null;
+
+        BedrockPart extNode = findMagazineNode(model, extLevel);
+        if (extNode == null) {
+            TaCZMagazines.LOGGER.warn("[MagazineItemRenderer] No extended mag bone (level {}) found for gun '{}', skipping", extLevel, gunId);
+            return null;
+        }
+
+        BedrockPart ownedNode = deepCopy(extNode);
         return new MagazineRenderData(model, ownedNode, texture);
     }
 
@@ -359,7 +415,7 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         copy.xScale = src.xScale;
         copy.yScale = src.yScale;
         copy.zScale = src.zScale;
-        copy.visible = src.visible;
+        copy.visible = true; // start fully visible; renderByItem filter controls per-bone visibility
         copy.additionalQuaternion = new org.joml.Quaternionf(src.additionalQuaternion);
 
         // Cubes are geometry-only, they have no animation state — safe to share
@@ -377,8 +433,18 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
     // Magazine bone discovery
     // =========================================================================
 
-    private static BedrockPart findMagazineNode(BedrockGunModel model) {
+    private static BedrockPart findMagazineNode(BedrockGunModel model, int extLevel) {
         initReflection();
+
+        // For extended mags, try the exact extended bone first (mag_extended_1/2/3)
+        if (extLevel > 0) {
+            BedrockPart extNode = findBoneEquals(model.getRootNode(), "mag_extended_" + extLevel);
+            if (extNode != null) return extNode;
+            // Fuzzy fallback for non-standard naming
+            extNode = findBoneContaining(model.getRootNode(), "extended_" + extLevel);
+            if (extNode != null) return extNode;
+            // If the gun has no dedicated extended bone, fall through to the normal bone
+        }
 
         // 1. Try the official TaCZ field first
         if (magazineNodeField != null) {
@@ -388,18 +454,17 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
             } catch (Exception ignored) {}
         }
 
-        // 2. Priority Search: Look for the ACTUAL geometry bones first
-        // This prevents picking up "mag_and_lefthand" or "additional_mag"
+        // 2. Priority search: look for the actual geometry bones first to avoid
+        //    picking up "mag_and_lefthand" or "additional_mag"
         String[] priorityNames = {"mag_and_bullet", "magzine", "mag", "mag_standard", "mag_default", "magazine_body", "gun_mag"};
         for (String name : priorityNames) {
             BedrockPart found = findBoneEquals(model.getRootNode(), name);
             if (found != null) return found;
         }
 
-        // 3. Fallback: existing fuzzy search
+        // 3. Fuzzy fallback
         BedrockPart found = findBoneContaining(model.getRootNode(), "magazine");
         if (found == null) found = findBoneContaining(model.getRootNode(), "mag");
-
         return found;
     }
 
