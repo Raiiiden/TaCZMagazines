@@ -3,6 +3,8 @@ package com.raiiiden.taczmagazines;
 import com.raiiiden.taczmagazines.capability.GunMagazineCapability;
 import com.raiiiden.taczmagazines.command.MagazineCommands;
 import com.raiiiden.taczmagazines.config.FamilyConfigManager;
+import com.raiiiden.taczmagazines.config.GunOverrideConfig;
+import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
@@ -30,6 +32,8 @@ public class TaCZMagazines {
 
     // Register configs
     FamilyConfigManager.register();
+    GunOverrideConfig.register();
+    MechanicsConfig.register();
 
     // Register magazines
     MagazineRegistrar.register();
@@ -61,6 +65,7 @@ public class TaCZMagazines {
   public void onDatapackSync(OnDatapackSyncEvent event) {
     // Discover magazine families when datapacks load
     MagazineFamilySystem.discoverMagazineFamilies();
+    GunOverrideConfig.apply();
     LOGGER.info("[{}] Magazine families discovered", MODID);
 
     // Invalidate the magazine render cache on the client so it picks up updated gun models.

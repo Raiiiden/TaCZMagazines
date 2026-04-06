@@ -18,6 +18,13 @@ public abstract class MixinReloadKey {
         if (event.getAction() != 1 /* GLFW_PRESS */) return;
         if (!ReloadKey.RELOAD_KEY.matches(event.getKey(), event.getScanCode())) return;
 
+        // If the unload keybind matches (key + modifier), unload takes priority over reload.
+        if (com.raiiiden.taczmagazines.client.ModKeybinds.UNLOAD_MAG.isActiveAndMatches(
+                com.mojang.blaze3d.platform.InputConstants.getKey(event.getKey(), event.getScanCode()))) {
+            ci.cancel();
+            return;
+        }
+
         // Ask our handler how to process this press.
         // Returns true → we handle it (cancel TaCZ now, reload on release).
         // Returns false → let TaCZ fire its normal reload.

@@ -26,5 +26,20 @@ public class PacketHandler {
                 OpenSelectorPacket::encode,
                 OpenSelectorPacket::decode,
                 OpenSelectorPacket::handle);
+
+        CHANNEL.registerMessage(id++, UnloadGunMagPacket.class,
+                UnloadGunMagPacket::encode,
+                UnloadGunMagPacket::decode,
+                UnloadGunMagPacket::handle);
+
+        CHANNEL.registerMessage(id++, BulletTransferPacket.class,
+                BulletTransferPacket::encode,
+                BulletTransferPacket::decode,
+                BulletTransferPacket::handle);
+
+        CHANNEL.registerMessage(id++, LoadOneFromHandPacket.class,
+                LoadOneFromHandPacket::encode,
+                LoadOneFromHandPacket::decode,
+                LoadOneFromHandPacket::handle);
     }
 }
