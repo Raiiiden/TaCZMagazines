@@ -3,6 +3,7 @@ package com.raiiiden.taczmagazines;
 import com.raiiiden.taczmagazines.capability.GunMagazineCapability;
 import com.raiiiden.taczmagazines.command.MagazineCommands;
 import com.raiiiden.taczmagazines.config.FamilyConfigManager;
+import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.raiiiden.taczmagazines.network.PacketHandler;
@@ -15,6 +16,7 @@ import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -65,5 +67,15 @@ public class TaCZMagazines {
     // Using DistExecutor to safely call client-only code without crashing on the server.
     DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
             () -> com.raiiiden.taczmagazines.client.MagazineItemRenderer::invalidateCache);
+
+
+    // Inject "Magazines" tab and recipes into the gun_smith_table.
+    // ServerLifecycleHooks.getCurrentServer() returns null on the logical client during
+    // singleplayer before the integrated server starts, so guard against null.
+    GunsmithIntegration.setup(ServerLifecycleHooks.getCurrentServer());
+
+    DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
+            () -> () -> MinecraftForge.EVENT_BUS.addListener(
+                    com.raiiiden.taczmagazines.client.ClientRecipeSorter::onRecipesUpdated));
   }
 }

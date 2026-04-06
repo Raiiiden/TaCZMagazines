@@ -64,7 +64,7 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
     private static final float TARGET_FIRST_PERSON = 0.55f;
     private static final float TARGET_THIRD_PERSON = 0.35f;
     private static final float TARGET_GROUND = 0.35f;
-    private static final float TARGET_FIXED  = 0.10f;
+    private static final float TARGET_FIXED  = 0.50f;
 
     public MagazineItemRenderer() {
         super(Minecraft.getInstance().getBlockEntityRenderDispatcher(),

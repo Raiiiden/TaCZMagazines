@@ -276,6 +276,32 @@ public class MagazineFamilySystem {
         return familyId;
     }
 
+    public static List<String> getFamiliesInCreativeTabOrder() {
+        Map<String, Set<Integer>> baseFamiliesByAmmo = getAllMagazineFamiliesWithCapacities();
+
+        List<String> sortedAmmoTypes = new ArrayList<>(baseFamiliesByAmmo.keySet());
+        sortedAmmoTypes.sort(String::compareToIgnoreCase);
+
+        List<String> ordered = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+
+        for (String ammoType : sortedAmmoTypes) {
+            List<Integer> sortedCapacities = new ArrayList<>(baseFamiliesByAmmo.get(ammoType));
+            Collections.sort(sortedCapacities);
+
+            for (int capacity : sortedCapacities) {
+                String familyId = ammoType + "_" + capacity;
+                if (seen.add(familyId)) ordered.add(familyId);  // CHANGE THIS
+
+                for (String extFamilyId : getExtendedFamiliesForBaseFamily(familyId)) {
+                    if (seen.add(extFamilyId)) ordered.add(extFamilyId);  // CHANGE THIS
+                }
+            }
+        }
+
+        return ordered;
+    }
+
     public static String getFamilyDisplayName(String familyId) {
         if (EXTENDED_FAMILIES.contains(familyId)) {
             int level = EXT_LEVEL_MAP.getOrDefault(familyId, 1);
