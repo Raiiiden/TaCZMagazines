@@ -182,6 +182,37 @@ public class MagazineFamilySystem {
         return MAGAZINE_FAMILIES.getOrDefault(familyId, Collections.emptySet());
     }
 
+    // ── Gun override / exclusion (applied by GunOverrideConfig after discovery) ──
+
+    // Removes a gun from the magazine system so it falls back to TaCZ default behaviour.
+    public static void excludeGun(ResourceLocation gunId) {
+        String family = GUN_TO_FAMILY.remove(gunId);
+        if (family != null) {
+            Set<ResourceLocation> guns = MAGAZINE_FAMILIES.get(family);
+            if (guns != null) guns.remove(gunId);
+        }
+        List<String> extFamilies = GUN_TO_EXT_FAMILIES.remove(gunId);
+        if (extFamilies != null) {
+            for (String extFamily : extFamilies) {
+                Set<ResourceLocation> guns = MAGAZINE_FAMILIES.get(extFamily);
+                if (guns != null) guns.remove(gunId);
+            }
+        }
+    }
+
+    // Forces a gun to belong to a specific magazine family, replacing any auto-discovered mapping. */
+    public static void overrideGunFamily(ResourceLocation gunId, String targetFamilyId) {
+        // Remove from whichever family it currently belongs to
+        String currentFamily = GUN_TO_FAMILY.remove(gunId);
+        if (currentFamily != null && !currentFamily.equals(targetFamilyId)) {
+            Set<ResourceLocation> guns = MAGAZINE_FAMILIES.get(currentFamily);
+            if (guns != null) guns.remove(gunId);
+        }
+        // Add to the target family
+        MAGAZINE_FAMILIES.computeIfAbsent(targetFamilyId, k -> new HashSet<>()).add(gunId);
+        GUN_TO_FAMILY.put(gunId, targetFamilyId);
+    }
+
     // Returns the alphabetically-first gun discovered for this family (the raw default, ignoring config).
     public static ResourceLocation getDefaultRepresentativeGun(String familyId) {
         return FAMILY_REPRESENTATIVE.get(familyId);
