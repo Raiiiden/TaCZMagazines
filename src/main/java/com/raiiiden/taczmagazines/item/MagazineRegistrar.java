@@ -44,39 +44,28 @@ public class MagazineRegistrar {
                     .title(Component.literal("TaCZ Magazines"))
                     .icon(() -> new ItemStack(TAB_ICON.get()))
                     .displayItems((params, output) -> {
-                        // Group magazines by ammo type
-                        Map<String, Set<Integer>> familiesByAmmo = MagazineFamilySystem.getAllMagazineFamiliesWithCapacities();
+                        Map<String, Set<Integer>> baseFamiliesByAmmo = MagazineFamilySystem.getAllMagazineFamiliesWithCapacities();
 
-                        // Sort ammo types alphabetically
-                        List<String> sortedAmmoTypes = new ArrayList<>(familiesByAmmo.keySet());
+                        List<String> sortedAmmoTypes = new ArrayList<>(baseFamiliesByAmmo.keySet());
                         sortedAmmoTypes.sort(String::compareToIgnoreCase);
 
                         for (String ammoType : sortedAmmoTypes) {
-                            Set<Integer> capacities = familiesByAmmo.get(ammoType);
-
-                            // Sort capacities
-                            List<Integer> sortedCapacities = new ArrayList<>(capacities);
+                            List<Integer> sortedCapacities = new ArrayList<>(baseFamiliesByAmmo.get(ammoType));
                             Collections.sort(sortedCapacities);
 
                             for (int capacity : sortedCapacities) {
                                 String familyId = ammoType + "_" + capacity;
                                 ResourceLocation ammoId = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
 
-                                // Add empty magazine
-                                output.accept(MagazineItem.createMagazineByFamily(
-                                        MAGAZINE.get(),
-                                        familyId,
-                                        0
-                                ));
-
-                                // Add full magazine
+                                // Full first, then empty
                                 if (ammoId != null) {
-                                    output.accept(MagazineItem.createMagazineByFamily(
-                                            MAGAZINE.get(),
-                                            familyId,
-                                            capacity,
-                                            ammoId
-                                    ));
+                                    output.accept(MagazineItem.createMagazineByFamily(MAGAZINE.get(), familyId, capacity, ammoId));
+                                }
+                                output.accept(MagazineItem.createMagazineByFamily(MAGAZINE.get(), familyId, 0));
+
+                                // Extended mags (empty only) that belong to guns in this base family
+                                for (String extFamilyId : MagazineFamilySystem.getExtendedFamiliesForBaseFamily(familyId)) {
+                                    output.accept(MagazineItem.createMagazineByFamily(MAGAZINE.get(), extFamilyId, 0));
                                 }
                             }
                         }

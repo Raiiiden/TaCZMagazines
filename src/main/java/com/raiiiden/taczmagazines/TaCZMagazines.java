@@ -2,7 +2,7 @@ package com.raiiiden.taczmagazines;
 
 import com.raiiiden.taczmagazines.capability.GunMagazineCapability;
 import com.raiiiden.taczmagazines.command.MagazineCommands;
-import com.raiiiden.taczmagazines.config.MagazineConfig;
+import com.raiiiden.taczmagazines.config.FamilyConfigManager;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.raiiiden.taczmagazines.network.PacketHandler;
@@ -26,8 +26,8 @@ public class TaCZMagazines {
   public TaCZMagazines() {
     LOGGER.info("[{}] TaCZ Magazines mod initializing...", MODID);
 
-    // Register config
-    MagazineConfig.register();
+    // Register configs
+    FamilyConfigManager.register();
 
     // Register magazines
     MagazineRegistrar.register();
