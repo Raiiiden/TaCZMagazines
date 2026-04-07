@@ -132,14 +132,17 @@ public class MagazineItem extends Item implements IAmmoBox {
         if (magazineFamilyId == null) return false;
         if (!MagazineFamilySystem.isMagazineCompatibleWithGun(magazineFamilyId, gunId)) return false;
 
-        // Extended mags require the gun to have the corresponding attachment installed.
-        // Smaller mags (normal or lower ext level) are always allowed regardless of attachment.
+        // Extended mags require the gun to have the corresponding attachment installed,
+        // unless the config option to bypass that requirement is enabled.
         if (MagazineFamilySystem.isExtendedFamily(magazineFamilyId)) {
-            int required = MagazineFamilySystem.getExtLevelForFamily(magazineFamilyId);
-            var gunIndexOpt = com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId);
-            if (!gunIndexOpt.isPresent()) return false;
-            int installed = com.tacz.guns.util.AttachmentDataUtils.getMagExtendLevel(gun, gunIndexOpt.get().getGunData());
-            return installed >= required;
+            if (!com.raiiiden.taczmagazines.config.MechanicsConfig.ALLOW_EXTENDED_WITHOUT_ATTACHMENT.get()) {
+                int required = MagazineFamilySystem.getExtLevelForFamily(magazineFamilyId);
+                var gunIndexOpt = com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId);
+                if (!gunIndexOpt.isPresent()) return false;
+                int installed = com.tacz.guns.util.AttachmentDataUtils.getMagExtendLevel(gun, gunIndexOpt.get().getGunData());
+                return installed >= required;
+            }
+            // Config says allow extended without attachment — skip the check
         }
 
         return true;
@@ -343,7 +346,9 @@ public class MagazineItem extends Item implements IAmmoBox {
         } else {
             if (action != ClickAction.SECONDARY) return false;
             if (player.level().isClientSide) return true;
-            return fillAll(magazine, heldStack, heldAmmoId, magAmmoCount, maxCapacity, player, heldAccess);
+            boolean filled = fillAll(magazine, heldStack, heldAmmoId, magAmmoCount, maxCapacity, player, heldAccess);
+            if (filled) slot.setChanged();
+            return filled;
         }
     }
 

@@ -10,7 +10,7 @@ issueTrackerURL=""
 
 [[mods]] #mandatory
 modId="taczmagazines" #mandatory
-version="0.1.0" #mandatory
+version="0.1.1" #mandatory
 displayName="TaCZ: Magazines" #mandatory
 updateJSONURL=""
 displayURL="https://www.curseforge.com/minecraft/mc-mods/taczmagazines"

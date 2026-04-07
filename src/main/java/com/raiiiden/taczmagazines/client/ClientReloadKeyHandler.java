@@ -11,6 +11,7 @@ import com.tacz.guns.util.InputExtraCheck;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.event.TickEvent;
@@ -28,6 +29,13 @@ public class ClientReloadKeyHandler {
     private static boolean cancelled = false;
     private static boolean serverBlocked = false;
 
+    // Frozen ext level — set once at reload confirm, held for entire animation,
+    // cleared when reload state ends. -1 = not set.
+    private static int frozenExtLevel = -1;
+
+    public static int getFrozenExtLevel() { return frozenExtLevel; }
+    public static void clearFrozenExtLevel() { frozenExtLevel = -1; }
+
     public static boolean isSelectorOpen() {
         return inSelectorMode;
     }
@@ -39,8 +47,6 @@ public class ClientReloadKeyHandler {
         if (!(gun.getItem() instanceof IGun iGun)) return false;
         if (iGun.useInventoryAmmo(gun)) return false;
 
-        // Only intercept for magazine-type guns that have a family registered.
-        // Non-magazine guns (shotguns, etc.) should pass through to TaCZ normally.
         ResourceLocation gunId = iGun.getGunId(gun);
         com.tacz.guns.resource.index.CommonGunIndex gunIndex =
                 com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId).orElse(null);
@@ -87,17 +93,17 @@ public class ClientReloadKeyHandler {
             MagazineSelectorOverlay.close();
             serverBlocked = false;
             if (selectedSlot >= 0) {
-                // SelectMagazinePacket unblocks atomically + writes slot tag.
+                ItemStack mag = player.getInventory().getItem(selectedSlot);
+                frozenExtLevel = resolveExtLevel(mag);
                 PacketHandler.CHANNEL.sendToServer(new SelectMagazinePacket(selectedSlot));
                 IClientPlayerGunOperator.fromLocalPlayer(player).reload();
             } else {
                 PacketHandler.CHANNEL.sendToServer(new OpenSelectorPacket(false));
             }
         } else {
-            // Single tap — send SelectMagazinePacket with slot = -1 to atomically
-            // unblock the server and then immediately trigger reload. This prevents
-            // the race condition where OpenSelectorPacket(false) hasn't been processed
-            // yet when canReload fires server-side.
+            // Tap reload — freeze from first compatible mag in inventory
+            ItemStack gun = player.getMainHandItem();
+            frozenExtLevel = resolveFirstCompatibleExtLevel(gun, player.getInventory());
             serverBlocked = false;
             PacketHandler.CHANNEL.sendToServer(new SelectMagazinePacket(-1));
             IClientPlayerGunOperator.fromLocalPlayer(player).reload();
@@ -109,7 +115,6 @@ public class ClientReloadKeyHandler {
         cancelled = true;
         inSelectorMode = false;
         MagazineSelectorOverlay.close();
-        // Keep server blocked until R is released.
     }
 
     @SubscribeEvent
@@ -144,17 +149,35 @@ public class ClientReloadKeyHandler {
             return;
         }
 
-        // Don't reopen selector if player right-click cancelled this hold.
         if (cancelled) return;
 
         long heldMs = System.currentTimeMillis() - keyDownAt;
         if (heldMs >= HOLD_THRESHOLD_MS) {
             inSelectorMode = true;
-            // Server is already blocked from key press — no need to send again.
             LocalPlayer player = Minecraft.getInstance().player;
             if (player != null) {
                 MagazineSelectorOverlay.open(player);
             }
         }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static int resolveExtLevel(ItemStack mag) {
+        if (mag.isEmpty() || !(mag.getItem() instanceof com.raiiiden.taczmagazines.item.MagazineItem)) return 0;
+        String fid = com.raiiiden.taczmagazines.item.MagazineItem.getMagazineFamilyId(mag);
+        if (fid != null && com.raiiiden.taczmagazines.magazine.MagazineFamilySystem.isExtendedFamily(fid))
+            return com.raiiiden.taczmagazines.magazine.MagazineFamilySystem.getExtLevelForFamily(fid);
+        return 0;
+    }
+
+    private static int resolveFirstCompatibleExtLevel(ItemStack gun, Inventory inv) {
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
+            if (!(s.getItem() instanceof com.raiiiden.taczmagazines.item.MagazineItem magItem)) continue;
+            if (!magItem.isAmmoBoxOfGun(gun, s)) continue;
+            return resolveExtLevel(s);
+        }
+        return 0;
     }
 }

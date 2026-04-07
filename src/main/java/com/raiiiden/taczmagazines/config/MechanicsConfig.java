@@ -14,6 +14,8 @@ public class MechanicsConfig {
     public static final ForgeConfigSpec.IntValue LOAD_TICKS;
     // Ticks between each bullet being ejected. Same scale as LOAD_TICKS.
     public static final ForgeConfigSpec.IntValue UNLOAD_TICKS;
+    // Whether extended magazines can be used without the extended-mag attachment installed.
+    public static final ForgeConfigSpec.BooleanValue ALLOW_EXTENDED_WITHOUT_ATTACHMENT;
 
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
@@ -21,7 +23,7 @@ public class MechanicsConfig {
 
         TICK_BASED = b
                 .comment("Set to false to use drop-in loading/unloading.",
-                         "  DROP-IN mode (true):",
+                         "  DROP-IN mode (false):",
                          "    Right-click ammo onto a magazine → fill instantly.",
                          "    Right-click an empty cursor onto a magazine → unload all ammo instantly.",
                          "  TICK-BASED mode (true, default):",
@@ -40,6 +42,17 @@ public class MechanicsConfig {
                 .comment("Ticks between each bullet being unloaded (tick-based mode).",
                          "Same scale as load_ticks.")
                 .defineInRange("unload_ticks", 10, 0, 60);
+
+        b.pop();
+        b.push("extended_magazines");
+
+        ALLOW_EXTENDED_WITHOUT_ATTACHMENT = b
+                .comment("When true, extended magazines can be loaded into a gun even if the",
+                         "extended-mag attachment is not installed on that gun.",
+                         "The gun will also visually display the extended mag bone and use the",
+                         "correct extended capacity as if the attachment were present.",
+                         "Only applies to guns that use the magazine system.")
+                .define("allow_extended_without_attachment", false);
 
         b.pop();
         SPEC = b.build();
