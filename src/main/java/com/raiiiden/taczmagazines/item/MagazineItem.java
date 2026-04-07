@@ -644,4 +644,9 @@ public class MagazineItem extends Item implements IAmmoBox {
         tag.putString(AMMO_ID_TAG, ammoId.toString());
         return stack;
     }
+
+    @Override
+    public java.util.Optional<net.minecraft.world.inventory.tooltip.TooltipComponent> getTooltipImage(ItemStack stack) {
+        return java.util.Optional.of(new com.raiiiden.taczmagazines.tooltip.MagazineTooltipData(stack));
+    }
 }

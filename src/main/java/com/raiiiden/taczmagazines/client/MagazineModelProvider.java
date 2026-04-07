@@ -1,6 +1,8 @@
 package com.raiiiden.taczmagazines.client;
 
 import com.raiiiden.taczmagazines.TaCZMagazines;
+import com.raiiiden.taczmagazines.tooltip.MagazineTooltipData;
+import com.raiiiden.taczmagazines.client.tooltip.MagazineTooltipRenderer;
 import net.minecraft.client.renderer.block.model.BakedQuad;
 import net.minecraft.client.renderer.block.model.ItemOverrides;
 import net.minecraft.client.renderer.block.model.ItemTransforms;
@@ -13,6 +15,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ModelEvent;
+import net.minecraftforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -64,5 +67,10 @@ public class MagazineModelProvider {
         @Override public TextureAtlasSprite getParticleIcon() { return base.getParticleIcon(); }
         @Override public ItemOverrides getOverrides() { return base.getOverrides(); }
         @Override public ItemTransforms getTransforms() { return base.getTransforms(); }
+    }
+    // Tooltip registry
+    @SubscribeEvent
+    public static void onRegisterTooltipFactories(RegisterClientTooltipComponentFactoriesEvent event) {
+        event.register(MagazineTooltipData.class, MagazineTooltipRenderer::new);
     }
 }
