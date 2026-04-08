@@ -50,7 +50,7 @@ public class MagazineFamilySystem {
             ResourceLocation gunId = entry.getKey();
             CommonGunIndex index = entry.getValue();
 
-            if (!isCompatibleGun(index)) continue;
+            if (!isCompatibleGun(index, gunId)) continue;
 
             // Base family
             String familyId = createFamilyId(index);
@@ -127,20 +127,50 @@ public class MagazineFamilySystem {
     }
 
     private static boolean isCompatibleGun(CommonGunIndex index) {
+        return isCompatibleGun(index, null);
+    }
+
+    // Returns true if the gun should participate in the magazine system.
+
+    private static boolean isCompatibleGun(CommonGunIndex index, ResourceLocation gunId) {
         if (index == null || index.getGunData() == null) return false;
 
         var reloadData = index.getGunData().getReloadData();
-        if (reloadData.getType() != FeedType.MAGAZINE) return false;
-        if (reloadData.isInfinite()) return false;
+
+        if (reloadData.getType() != FeedType.MAGAZINE) {
+            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — FeedType is {}", gunId, reloadData.getType());
+            return false;
+        }
+        if (reloadData.isInfinite()) {
+            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — infinite ammo", gunId);
+            return false;
+        }
 
         int ammoAmount = index.getGunData().getAmmoAmount();
-        if (ammoAmount <= 2) return false;
+        if (ammoAmount <= 2) {
+            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — capacity {} ≤ 2", gunId, ammoAmount);
+            return false;
+        }
 
-        // Filter out tube-fed shotguns by reload time
-        float emptyTime = reloadData.getFeed().getEmptyTime();
+        float emptyTime    = reloadData.getFeed().getEmptyTime();
         float tacticalTime = reloadData.getFeed().getTacticalTime();
-        if (emptyTime < 1.0f || tacticalTime < 1.0f) return false;
+        if (emptyTime < 1.0f || tacticalTime < 1.0f) {
+            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — reload times ({}/{}s) below 1s threshold", gunId, emptyTime, tacticalTime);
+            return false;
+        }
 
+        // Guns that reload shell-by-shell (tube-fed shotguns, lever-actions, stripper-clip loaders)
+        // implement their incremental feed timing via script params with "_feed" suffix keys
+        // (e.g. loop_feed, round1_feed, intro_empty_feed, clip_load_feed).
+        // Bolt-action magazine snipers do NOT have these keys — this check correctly excludes
+        // incremental loaders without touching real magazine-fed guns regardless of bolt type.
+        java.util.Map<String, Object> scriptParams = index.getGunData().getScriptParam();
+        if (scriptParams != null && scriptParams.keySet().stream().anyMatch(k -> k.endsWith("_feed"))) {
+            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — has per-round _feed script params", gunId);
+            return false;
+        }
+
+        if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] PASS {} — capacity={} empty={}s tactical={}s", gunId, ammoAmount, emptyTime, tacticalTime);
         return true;
     }
 

@@ -128,6 +128,7 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
         for (int i = 0; i < subtree.size(); i++) {
             BedrockPart part = subtree.get(i);
             savedVisible[i] = part.visible;
+            if (part == mag) continue; // never hide the root — it IS the magazine shape
             String name = part.name != null ? part.name.toLowerCase(Locale.ROOT) : "";
             if (!isExtended && (name.contains("extend") || name.contains("drum") || name.contains("max"))) {
                 part.visible = false;
@@ -438,7 +439,8 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
 
         // For extended mags, try the exact extended bone first (mag_extended_1/2/3)
         if (extLevel > 0) {
-            BedrockPart extNode = findBoneEquals(model.getRootNode(), "mag_extended_" + extLevel);
+            BedrockPart[] extPair = findBoneWithParent(model.getRootNode(), null, "mag_extended_" + extLevel, false);
+            BedrockPart extNode = extPair != null ? extPair[0] : null;
             if (extNode != null) return extNode;
             // Fuzzy fallback for non-standard naming
             extNode = findBoneContaining(model.getRootNode(), "extended_" + extLevel);
@@ -454,29 +456,77 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
             } catch (Exception ignored) {}
         }
 
-        // 2. Priority search: look for the actual geometry bones first to avoid
-        //    picking up "mag_and_lefthand" or "additional_mag"
-        String[] priorityNames = {"mag_and_bullet", "magzine", "mag", "mag_standard", "mag_default", "magazine_body", "gun_mag"};
+        // 2. Priority search — specific dedicated magazine names first, ambiguous names last.
+        //    After each match, verify it has non-bullet geometry so we don't accidentally
+        //    return an empty pivot or a bullet-visualization group.
+        //    If the candidate has bullet-bone siblings under a shared parent group, elevate
+        //    to that parent so bullet visualization is included in the rendered item.
+        String[] priorityNames = {
+            "mag_and_bullet", "magzine", "mag_standard", "mag_default", "magazine_body", "gun_mag",
+            "clip", "ammo", "mag"
+        };
         for (String name : priorityNames) {
-            BedrockPart found = findBoneEquals(model.getRootNode(), name);
-            if (found != null) return found;
+            BedrockPart[] found = findBoneWithParent(model.getRootNode(), null, name, false);
+            if (found == null) continue;
+            BedrockPart candidate = found[0];
+            BedrockPart parent   = found[1];
+            if (!hasNonBulletGeometry(candidate)) continue;
+            // If bullet-viz bones sit alongside our candidate inside a dedicated ammo/mag group
+            // parent (e.g. clip inside ammo), use the parent so bullets are included.
+            // Guard: only elevate when the parent's own name marks it as an ammo/mag group —
+            // this prevents elevating all the way to the root when mag and ammo happen to be
+            // siblings at the top level of the model.
+            if (parent != null && isAmmoGroupBone(parent.name)
+                    && hasBulletSiblings(parent, candidate) && hasNonBulletGeometry(parent)) {
+                return parent;
+            }
+            return candidate;
         }
 
-        // 3. Fuzzy fallback
+        // 3. Fuzzy fallback — still require actual geometry
         BedrockPart found = findBoneContaining(model.getRootNode(), "magazine");
-        if (found == null) found = findBoneContaining(model.getRootNode(), "mag");
+        if (found != null && hasNonBulletGeometry(found)) return found;
+        found = findBoneContaining(model.getRootNode(), "mag");
+        if (found != null && hasNonBulletGeometry(found)) return found;
+
+        // 4. Last resort: accept any match even without confirmed geometry (e.g. bones whose
+        //    cubes couldn't be reflected), preferring mag/magazine names
+        found = findBoneContaining(model.getRootNode(), "magazine");
+        if (found != null) return found;
+        found = findBoneContaining(model.getRootNode(), "mag");
         return found;
     }
 
-    // Helper for exact matches
-    private static BedrockPart findBoneEquals(BedrockPart part, String name) {
+    // Exact-name search that also returns the parent so the caller can decide whether to elevate.
+    // Returns [candidate, parent] or null if not found.
+    private static BedrockPart[] findBoneWithParent(BedrockPart part, BedrockPart parent, String name, boolean fuzzy) {
         if (part == null) return null;
-        if (part.name != null && part.name.equalsIgnoreCase(name)) return part;
+        boolean matches = fuzzy
+                ? part.name != null && part.name.toLowerCase(Locale.ROOT).contains(name)
+                : part.name != null && part.name.equalsIgnoreCase(name);
+        if (matches) return new BedrockPart[]{part, parent};
         for (BedrockPart child : part.children) {
-            BedrockPart found = findBoneEquals(child, name);
+            BedrockPart[] found = findBoneWithParent(child, part, name, fuzzy);
             if (found != null) return found;
         }
         return null;
+    }
+
+    // True if any sibling of {@code exclude} under {@code parent} is a bullet-visualization bone.
+    private static boolean hasBulletSiblings(BedrockPart parent, BedrockPart exclude) {
+        for (BedrockPart child : parent.children) {
+            if (child == exclude) continue;
+            String n = child.name != null ? child.name.toLowerCase(Locale.ROOT) : "";
+            if (isBulletBone(n)) return true;
+        }
+        return false;
+    }
+
+    // True if the bone name suggests it is a dedicated ammo/magazine group, not a generic root.
+    private static boolean isAmmoGroupBone(String name) {
+        if (name == null) return false;
+        String lower = name.toLowerCase(Locale.ROOT);
+        return lower.contains("ammo") || lower.contains("bullet") || lower.contains("mag");
     }
 
     private static BedrockPart findBoneContaining(BedrockPart part, String keyword) {
@@ -515,6 +565,16 @@ public class MagazineItemRenderer extends BlockEntityWithoutLevelRenderer {
                 || lowerName.contains("round")
                 || lowerName.contains("cartridge")
                 || lowerName.contains("shell");
+    }
+
+    private static boolean hasNonBulletGeometry(BedrockPart bone) {
+        if (!bone.cubes.isEmpty()) return true;
+        for (BedrockPart child : bone.children) {
+            String name = child.name != null ? child.name.toLowerCase(Locale.ROOT) : "";
+            if (isBulletBone(name)) continue;
+            if (hasNonBulletGeometry(child)) return true;
+        }
+        return false;
     }
 
     private static float[] getCubeBounds(BedrockCube cube) {

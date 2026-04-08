@@ -17,6 +17,9 @@ public class MechanicsConfig {
     // Whether extended magazines can be used without the extended-mag attachment installed.
     public static final ForgeConfigSpec.BooleanValue ALLOW_EXTENDED_WITHOUT_ATTACHMENT;
 
+    // Whether to replace TaCZ's reserve-ammo number with a RoN-style magazine silhouette row.
+    public static final ForgeConfigSpec.BooleanValue OVERRIDE_AMMO_HUD;
+
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
         b.push("loading");
@@ -53,6 +56,15 @@ public class MechanicsConfig {
                          "correct extended capacity as if the attachment were present.",
                          "Only applies to guns that use the magazine system.")
                 .define("allow_extended_without_attachment", false);
+
+        b.pop();
+        b.push("hud");
+
+        OVERRIDE_AMMO_HUD = b
+                .comment("When true, replaces TaCZ's reserve-ammo counter with a row of magazine silhouettes",
+                         "that each show how full they are (Ready Or Not-style magazine check UI).",
+                         "Only applies to guns that use the magazine system.")
+                .define("override_ammo_hud", false);
 
         b.pop();
         SPEC = b.build();

@@ -49,6 +49,11 @@ public class TaCZMagazines {
     DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
             () -> () -> MinecraftForge.EVENT_BUS.addListener(
                     com.raiiiden.taczmagazines.client.ClientRecipeSorter::onRecipesUpdated));
+
+    // Register client-side commands (run in the client dispatcher, safe on dedicated servers).
+    DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT,
+            () -> () -> MinecraftForge.EVENT_BUS.addListener(
+                    com.raiiiden.taczmagazines.command.ClientCommands::onRegisterClientCommands));
   }
 
   private void commonSetup(FMLCommonSetupEvent event) {

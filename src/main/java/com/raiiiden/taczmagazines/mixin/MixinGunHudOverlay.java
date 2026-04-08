@@ -1,5 +1,6 @@
 package com.raiiiden.taczmagazines.mixin;
 
+import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.TimelessAPI;
@@ -8,6 +9,7 @@ import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.client.gui.overlay.GunHudOverlay;
 import com.tacz.guns.resource.index.CommonGunIndex;
 import com.tacz.guns.resource.pojo.data.gun.FeedType;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
@@ -17,6 +19,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @OnlyIn(Dist.CLIENT)
@@ -56,5 +59,50 @@ public class MixinGunHudOverlay {
 
         cacheInventoryAmmoCount = total;
         ci.cancel();
+    }
+
+    // When override_ammo_hud is on, blank the current-ammo "30" text (ordinal 0).
+    // Passing "" to drawString renders nothing; the loaded-mag silhouette replaces it.
+    @ModifyArg(
+        method = "render",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/GuiGraphics;drawString(Lnet/minecraft/client/gui/Font;Ljava/lang/String;FFIZ)I",
+            ordinal = 0
+        ),
+        index = 1,
+        remap = false
+    )
+    private String taczMag$blankCurrentAmmoText(String text) {
+        return isMagHudActive() ? "" : text;
+    }
+
+    // When override_ammo_hud is on, blank the reserve-ammo "/90" text (ordinal 1).
+    // The reserve-mag silhouettes replace it visually.
+    @ModifyArg(
+        method = "render",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/client/gui/GuiGraphics;drawString(Lnet/minecraft/client/gui/Font;Ljava/lang/String;FFIZ)I",
+            ordinal = 1
+        ),
+        index = 1,
+        remap = false
+    )
+    private String taczMag$blankReserveAmmoText(String text) {
+        return isMagHudActive() ? "" : text;
+    }
+
+    private static boolean isMagHudActive() {
+        if (!MechanicsConfig.OVERRIDE_AMMO_HUD.get()) return false;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return false;
+        ItemStack gun = mc.player.getMainHandItem();
+        if (!(gun.getItem() instanceof IGun iGun)) return false;
+        ResourceLocation gunId = iGun.getGunId(gun);
+        CommonGunIndex index = TimelessAPI.getCommonGunIndex(gunId).orElse(null);
+        if (index == null) return false;
+        if (!index.getGunData().getReloadData().getType().equals(FeedType.MAGAZINE)) return false;
+        return MagazineFamilySystem.getFamilyForGun(gunId) != null;
     }
 }
