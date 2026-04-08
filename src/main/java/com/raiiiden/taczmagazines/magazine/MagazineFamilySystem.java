@@ -159,15 +159,20 @@ public class MagazineFamilySystem {
             return false;
         }
 
-        // Guns that reload shell-by-shell (tube-fed shotguns, lever-actions, stripper-clip loaders)
-        // implement their incremental feed timing via script params with "_feed" suffix keys
-        // (e.g. loop_feed, round1_feed, intro_empty_feed, clip_load_feed).
-        // Bolt-action magazine snipers do NOT have these keys — this check correctly excludes
-        // incremental loaders without touching real magazine-fed guns regardless of bolt type.
+        // Tube-fed shotguns and lever-actions load one round at a time; their scripts use
+        // "loop_feed" (the shell-loop timer) and/or numbered "round1_feed"/"round2_feed" keys.
+        // Stripper-clip guns use "clip_load_feed".  These are the only patterns that reliably
+        // signal incremental loading — a broad endsWith("_feed") check incorrectly rejects
+        // standard magazine guns that happen to have other *_feed script params (e.g. fire_feed).
         java.util.Map<String, Object> scriptParams = index.getGunData().getScriptParam();
-        if (scriptParams != null && scriptParams.keySet().stream().anyMatch(k -> k.endsWith("_feed"))) {
-            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — has per-round _feed script params", gunId);
-            return false;
+        if (scriptParams != null) {
+            boolean hasPerRoundFeed = scriptParams.containsKey("loop_feed")
+                    || scriptParams.containsKey("clip_load_feed")
+                    || scriptParams.keySet().stream().anyMatch(k -> k.matches("round\\d+_feed"));
+            if (hasPerRoundFeed) {
+                if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — has per-round feed script params (loop_feed/round#_feed/clip_load_feed)", gunId);
+                return false;
+            }
         }
 
         if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] PASS {} — capacity={} empty={}s tactical={}s", gunId, ammoAmount, emptyTime, tacticalTime);
