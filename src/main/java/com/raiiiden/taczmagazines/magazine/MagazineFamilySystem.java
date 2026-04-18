@@ -24,6 +24,11 @@ public class MagazineFamilySystem {
     // One gun can belong to multiple extended families (one per level)
     private static final Map<ResourceLocation, List<String>> GUN_TO_EXT_FAMILIES = new HashMap<>();
 
+    // Isolated gun families — keyed by solo_ family ID, value is the capacity of that family
+    private static final Map<String, Integer> ISOLATED_FAMILY_CAPACITY = new HashMap<>();
+    // Family IDs that were created by isolation (base only, not extended)
+    private static final Set<String> ISOLATED_BASE_FAMILIES = new LinkedHashSet<>();
+
     public static void discoverMagazineFamilies() {
         MAGAZINE_FAMILIES.clear();
         GUN_TO_FAMILY.clear();
@@ -31,6 +36,8 @@ public class MagazineFamilySystem {
         EXTENDED_FAMILIES.clear();
         EXT_LEVEL_MAP.clear();
         GUN_TO_EXT_FAMILIES.clear();
+        ISOLATED_FAMILY_CAPACITY.clear();
+        ISOLATED_BASE_FAMILIES.clear();
 
         // Use get() instead of getInstance() so that on a dedicated-server client the
         // CommonNetworkCache (populated via ServerMessageSyncGunPack) is used rather
@@ -108,9 +115,6 @@ public class MagazineFamilySystem {
 
         TaCZMagazines.LOGGER.info("Total magazine families: {} base + {} extended",
                 groupedGuns.size(), EXTENDED_FAMILIES.size());
-
-        // Sync config after discovery so the file reflects the current family list
-        com.raiiiden.taczmagazines.config.FamilyConfigManager.sync();
     }
 
     private static String createFamilyId(CommonGunIndex gunIndex) {
@@ -221,6 +225,66 @@ public class MagazineFamilySystem {
         return MAGAZINE_FAMILIES.getOrDefault(familyId, Collections.emptySet());
     }
 
+    // ── Isolated gun families ─────────────────────────────────────────────────
+
+    public static void applyIsolatedGuns(java.util.Set<ResourceLocation> guns) {
+        for (ResourceLocation gunId : guns) {
+            String sharedFamily = GUN_TO_FAMILY.get(gunId);
+            if (sharedFamily == null) {
+                TaCZMagazines.LOGGER.warn("[IsolatedGun] '{}' is not in any magazine family — skipping isolation", gunId);
+                continue;
+            }
+
+            // Remember shared family's capacity before we possibly modify things
+            int capacity = getCapacityForFamily(sharedFamily);
+
+            // Remove from shared base family
+            Set<ResourceLocation> sharedGuns = MAGAZINE_FAMILIES.get(sharedFamily);
+            if (sharedGuns != null) sharedGuns.remove(gunId);
+            GUN_TO_FAMILY.remove(gunId);
+
+            // Create private base family: solo_namespace_path
+            String soloId = "solo_" + gunId.getNamespace() + "_" + gunId.getPath().replace("/", "_");
+            Set<ResourceLocation> soloSet = new HashSet<>();
+            soloSet.add(gunId);
+            MAGAZINE_FAMILIES.put(soloId, soloSet);
+            GUN_TO_FAMILY.put(gunId, soloId);
+            FAMILY_REPRESENTATIVE.put(soloId, gunId);
+            ISOLATED_FAMILY_CAPACITY.put(soloId, capacity);
+            ISOLATED_BASE_FAMILIES.add(soloId);
+            TaCZMagazines.LOGGER.info("[IsolatedGun] '{}' → isolated family '{}'", gunId, soloId);
+
+            // Isolate extended families too
+            List<String> extFamilies = GUN_TO_EXT_FAMILIES.get(gunId);
+            if (extFamilies != null) {
+                List<String> newExtFamilies = new ArrayList<>();
+                for (String extFamilyId : new ArrayList<>(extFamilies)) {
+                    Set<ResourceLocation> extGuns = MAGAZINE_FAMILIES.get(extFamilyId);
+                    if (extGuns != null) extGuns.remove(gunId);
+
+                    int level = EXT_LEVEL_MAP.getOrDefault(extFamilyId, 1);
+                    int extCapacity = getCapacityForFamily(extFamilyId);
+                    String soloExtId = soloId + "_ext" + level;
+
+                    Set<ResourceLocation> soloExtSet = new HashSet<>();
+                    soloExtSet.add(gunId);
+                    MAGAZINE_FAMILIES.put(soloExtId, soloExtSet);
+                    EXTENDED_FAMILIES.add(soloExtId);
+                    EXT_LEVEL_MAP.put(soloExtId, level);
+                    ISOLATED_FAMILY_CAPACITY.put(soloExtId, extCapacity);
+                    FAMILY_REPRESENTATIVE.put(soloExtId, gunId);
+                    newExtFamilies.add(soloExtId);
+                    TaCZMagazines.LOGGER.info("[IsolatedGun] '{}' → isolated extended family '{}'", gunId, soloExtId);
+                }
+                GUN_TO_EXT_FAMILIES.put(gunId, newExtFamilies);
+            }
+        }
+    }
+
+    public static List<String> getIsolatedBaseFamilies() {
+        return new ArrayList<>(ISOLATED_BASE_FAMILIES);
+    }
+
     // ── Gun override / exclusion (applied by GunOverrideConfig after discovery) ──
 
     // Removes a gun from the magazine system so it falls back to TaCZ default behaviour.
@@ -306,8 +370,12 @@ public class MagazineFamilySystem {
         return null;
     }
 
-    // Parses the capacity from a family ID — handles both base and extended formats
+    // Parses the capacity from a family ID — handles base, extended, and isolated formats
     public static int getCapacityForFamily(String familyId) {
+        // Isolated families store capacity in a dedicated map
+        if (ISOLATED_FAMILY_CAPACITY.containsKey(familyId)) {
+            return ISOLATED_FAMILY_CAPACITY.get(familyId);
+        }
         if (EXTENDED_FAMILIES.contains(familyId)) {
             // format: ammoName_extCapacity_extN — strip _extN suffix first
             int extIdx = familyId.lastIndexOf("_ext");
@@ -373,6 +441,29 @@ public class MagazineFamilySystem {
     }
 
     public static String getFamilyDisplayName(String familyId) {
+        // Isolated family: solo_namespace_path  →  "Namespace Path Solo Magazine"
+        if (familyId.startsWith("solo_") && !EXTENDED_FAMILIES.contains(familyId)) {
+            String gunPart = familyId.substring(5); // strip "solo_"
+            int sep = gunPart.indexOf('_');
+            if (sep > 0) {
+                String path = gunPart.substring(sep + 1).replace("_", " ");
+                String cap  = String.valueOf(getCapacityForFamily(familyId));
+                return String.format("%s %s-Round Solo Magazine", path.substring(0, 1).toUpperCase() + path.substring(1), cap);
+            }
+        }
+        // Isolated extended family: solo_namespace_path_ext1
+        if (familyId.startsWith("solo_") && EXTENDED_FAMILIES.contains(familyId)) {
+            int extIdx = familyId.lastIndexOf("_ext");
+            String base = extIdx > 0 ? familyId.substring(0, extIdx) : familyId;
+            String gunPart = base.substring(5);
+            int sep = gunPart.indexOf('_');
+            String path = sep > 0 ? gunPart.substring(sep + 1).replace("_", " ") : gunPart;
+            int level = EXT_LEVEL_MAP.getOrDefault(familyId, 1);
+            String[] roman = {"I", "II", "III"};
+            String cap = String.valueOf(getCapacityForFamily(familyId));
+            return String.format("%s %s-Round Solo Extended %s Magazine",
+                    path.substring(0, 1).toUpperCase() + path.substring(1), cap, roman[Math.min(level - 1, 2)]);
+        }
         if (EXTENDED_FAMILIES.contains(familyId)) {
             int level = EXT_LEVEL_MAP.getOrDefault(familyId, 1);
             String[] roman = {"I", "II", "III"};

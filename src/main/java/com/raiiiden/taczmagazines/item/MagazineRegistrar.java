@@ -69,6 +69,20 @@ public class MagazineRegistrar {
                                 }
                             }
                         }
+
+                        // Isolated (solo) magazine families — each gun listed in [isolated_guns]
+                        // gets its own group here, separate from the shared families above.
+                        for (String soloFamilyId : MagazineFamilySystem.getIsolatedBaseFamilies()) {
+                            ResourceLocation ammoId = MagazineFamilySystem.getAmmoTypeForFamily(soloFamilyId);
+                            int capacity = MagazineFamilySystem.getCapacityForFamily(soloFamilyId);
+                            if (ammoId != null) {
+                                output.accept(MagazineItem.createMagazineByFamily(MAGAZINE.get(), soloFamilyId, capacity, ammoId));
+                            }
+                            output.accept(MagazineItem.createMagazineByFamily(MAGAZINE.get(), soloFamilyId, 0));
+                            for (String extFamilyId : MagazineFamilySystem.getExtendedFamiliesForBaseFamily(soloFamilyId)) {
+                                output.accept(MagazineItem.createMagazineByFamily(MAGAZINE.get(), extFamilyId, 0));
+                            }
+                        }
                     })
                     .build()
     );

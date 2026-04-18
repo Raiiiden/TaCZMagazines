@@ -9,10 +9,12 @@ import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.raiiiden.taczmagazines.network.PacketHandler;
+import net.minecraft.network.chat.Component;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.OnDatapackSyncEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.DistExecutor;
 import net.minecraftforge.fml.common.Mod;
@@ -21,6 +23,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.server.ServerLifecycleHooks;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Mod(TaCZMagazines.MODID)
 public class TaCZMagazines {
@@ -43,6 +48,7 @@ public class TaCZMagazines {
     FMLJavaModLoadingContext.get().getModEventBus().addListener(this::registerCapabilities);
     MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
     MinecraftForge.EVENT_BUS.addListener(this::onDatapackSync);
+    MinecraftForge.EVENT_BUS.addListener(this::onPlayerLoggedIn);
 
     // Register the client-side RecipesUpdatedEvent listener at startup so it fires even
     // when connecting to a dedicated server (OnDatapackSyncEvent only fires server-side).
@@ -74,9 +80,12 @@ public class TaCZMagazines {
 
   @SubscribeEvent
   public void onDatapackSync(OnDatapackSyncEvent event) {
-    // Discover magazine families when datapacks load
+    // 1. Discover shared families from gun data
     MagazineFamilySystem.discoverMagazineFamilies();
+    // 2. Apply gun overrides/exclusions and isolated-gun private families
     GunOverrideConfig.apply();
+    // 3. Apply family model overrides (which gun's render each family uses)
+    FamilyConfigManager.load();
     LOGGER.info("[{}] Magazine families discovered", MODID);
 
     // Invalidate the magazine render cache on the client so it picks up updated gun models.
@@ -89,5 +98,21 @@ public class TaCZMagazines {
     // ServerLifecycleHooks.getCurrentServer() returns null on the logical client during
     // singleplayer before the integrated server starts, so guard against null.
     GunsmithIntegration.setup(ServerLifecycleHooks.getCurrentServer());
+  }
+
+  // Sends red chat messages to any player who logs in while there are config errors.
+  // Errors persist until the config is fixed and datapacks are reloaded (F3+T).
+  private void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+    List<String> errors = new ArrayList<>();
+    errors.addAll(GunOverrideConfig.getErrors());
+    errors.addAll(FamilyConfigManager.getErrors());
+    if (errors.isEmpty()) return;
+
+    net.minecraft.world.entity.player.Player player = event.getEntity();
+    player.sendSystemMessage(Component.literal(
+        "§c[TaCZMagazines] Config errors — fix and press F3+T to reload:"));
+    for (String error : errors) {
+        player.sendSystemMessage(Component.literal("§c  • " + error));
+    }
   }
 }
