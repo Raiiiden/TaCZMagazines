@@ -46,6 +46,8 @@ public class BulletTransferPacket {
             if (menu == null || msg.containerSlot < 0 || msg.containerSlot >= menu.slots.size()) return;
 
             Slot slot = menu.slots.get(msg.containerSlot);
+            if (slot.container != player.getInventory()) return;
+
             ItemStack mag = slot.getItem();
             if (mag.isEmpty() || !(mag.getItem() instanceof MagazineItem magItem)) return;
 

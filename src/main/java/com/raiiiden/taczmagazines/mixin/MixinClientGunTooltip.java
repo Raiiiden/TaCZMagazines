@@ -3,6 +3,7 @@ package com.raiiiden.taczmagazines.mixin;
 import com.raiiiden.taczmagazines.capability.GunMagazineProvider;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
+import com.raiiiden.taczmagazines.magazine.GunMagazineInitializer;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.client.tooltip.ClientGunTooltip;
@@ -43,6 +44,8 @@ public class MixinClientGunTooltip {
     @Inject(method = "<init>", at = @At("TAIL"))
     private void afterInit(GunTooltip tooltip, CallbackInfo ci) {
         ItemStack gunStack = tooltip.getGun();
+        GunMagazineInitializer.ensureMagazineForLoadedGun(gunStack);
+
         IGun iGunLocal = tooltip.getIGun();
         CommonGunIndex gunIndex = tooltip.getGunIndex();
 

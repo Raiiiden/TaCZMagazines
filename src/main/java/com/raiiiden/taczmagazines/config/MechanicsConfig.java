@@ -20,6 +20,9 @@ public class MechanicsConfig {
     // Whether to replace TaCZ's reserve-ammo number with a RoN-style magazine silhouette row.
     public static final ForgeConfigSpec.BooleanValue OVERRIDE_AMMO_HUD;
 
+    // Whether holding a magazine in-hand enables tick-based load/unload sessions.
+    public static final ForgeConfigSpec.BooleanValue IN_HAND_TICK_BASED;
+
     static {
         ForgeConfigSpec.Builder b = new ForgeConfigSpec.Builder();
         b.push("loading");
@@ -65,6 +68,19 @@ public class MechanicsConfig {
                          "that each show how full they are (Ready Or Not-style magazine check UI).",
                          "Only applies to guns that use the magazine system.")
                 .define("override_ammo_hud", false);
+
+        b.pop();
+        b.push("in_hand_loading");
+
+        IN_HAND_TICK_BASED = b
+                .comment("When true, holding a magazine in your main hand enables tick-based loading/unloading.",
+                         "  Left-click  → start/stop adding bullets one per load_ticks interval.",
+                         "  Right-click → start/stop removing bullets one per unload_ticks interval.",
+                         "  Scrolling to another slot or dropping the magazine cancels the session.",
+                         "  Progress appears as a ring on the hotbar slot icon, not the cursor.",
+                         "  Uses the same load_ticks / unload_ticks intervals as inventory tick-based mode.",
+                         "  Block breaking and arm-swing are suppressed whenever a magazine is held.")
+                .define("in_hand_tick_based", true);
 
         b.pop();
         SPEC = b.build();

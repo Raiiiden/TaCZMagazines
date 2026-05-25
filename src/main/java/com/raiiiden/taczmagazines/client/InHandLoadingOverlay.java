@@ -6,41 +6,48 @@ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.Tesselator;
 import com.mojang.blaze3d.vertex.VertexFormat;
 import com.raiiiden.taczmagazines.TaCZMagazines;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.util.Mth;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.ScreenEvent;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.joml.Matrix4f;
 
+// Renders the tick-based progress arc centered on the active hotbar magazine slot
+// when an in-hand loading/unloading session is active.
 @Mod.EventBusSubscriber(modid = TaCZMagazines.MODID, value = Dist.CLIENT)
-public class MagazineLoadingOverlay {
+public class InHandLoadingOverlay {
 
-    private static final int SEGMENTS   = 64;
-    private static final float OUTER_R  = 6.5f;
-    private static final float INNER_R  = 4.0f;
-
-    // Colors (ARGB)
-    private static final int COLOR_BACKGROUND = 0x55AAAAAA; // semi-transparent gray
-    private static final int COLOR_LOAD        = 0xFFFFFFFF; // white
-    private static final int COLOR_UNLOAD      = 0xFFFFFFFF; // white
+    private static final int   SEGMENTS  = 64;
+    private static final float OUTER_R   = 7.0f;
+    private static final float INNER_R   = 4.5f;
+    private static final int   COLOR_BG  = 0x55AAAAAA; // semi-transparent gray ring
+    private static final int   COLOR_FG  = 0xFFFFFFFF; // white progress arc
 
     @SubscribeEvent
-    public static void onScreenRender(ScreenEvent.Render.Post event) {
-        if (!MagazineLoadingHandler.isActive()) return;
+    public static void onHotbarRender(RenderGuiOverlayEvent.Post event) {
+        if (event.getOverlay() != VanillaGuiOverlay.HOTBAR.type()) return;
+        if (!MagazineLoadingHandler.isInHandActive()) return;
 
-        float progress  = MagazineLoadingHandler.progress;
-        boolean unload  = MagazineLoadingHandler.isUnloading();
-        int fgColor     = unload ? COLOR_UNLOAD : COLOR_LOAD;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null) return;
 
-        double mouseX = event.getMouseX();
-        double mouseY = event.getMouseY();
+        int selected = mc.player.getInventory().selected;
+        int sw = mc.getWindow().getGuiScaledWidth();
+        int sh = mc.getWindow().getGuiScaledHeight();
 
-        // The carried item renders centered on the cursor; offset the ring slightly
-        float cx = (float) mouseX;
-        float cy = (float) mouseY;
+        // Hotbar slot icon centre:
+        //   Left edge of hotbar  = sw/2 - 91
+        //   Item icon left       = +1 (border) + slot*20 + 2 (inset) = hotbar+3 + slot*20
+        //   Item centre X        = +8  →  sw/2 - 91 + 3 + slot*20 + 8 = sw/2 - 80 + slot*20
+        //   Item top             = hotbar top (sh-22) + 3  →  centre Y = sh - 22 + 3 + 8 = sh - 11
+        float cx = sw / 2f - 80f + selected * 20;
+        float cy = sh - 11f;
 
+        float progress = MagazineLoadingHandler.inHandProgress;
         Matrix4f matrix = event.getGuiGraphics().pose().last().pose();
 
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
@@ -48,23 +55,22 @@ public class MagazineLoadingOverlay {
         RenderSystem.defaultBlendFunc();
         RenderSystem.disableDepthTest();
 
-        // Full ring (background) — always draw the complete circle
-        drawArc(matrix, cx, cy, OUTER_R, INNER_R, 0f, Mth.TWO_PI, COLOR_BACKGROUND);
+        // Background ring
+        drawArc(matrix, cx, cy, OUTER_R, INNER_R, 0f, Mth.TWO_PI, COLOR_BG);
 
-        // Progress arc — grows clockwise from the top as progress approaches 1.0
+        // Progress arc — grows clockwise from top
         if (progress > 0f) {
-            float endAngle = Mth.TWO_PI * Math.min(progress, 1f);
-            // Start from -π/2 (top) and go clockwise (positive direction in screen coords)
-            drawArc(matrix, cx, cy, OUTER_R, INNER_R, -Mth.HALF_PI, -Mth.HALF_PI + endAngle, fgColor);
+            float end = Mth.TWO_PI * Math.min(progress, 1f);
+            drawArc(matrix, cx, cy, OUTER_R, INNER_R, -Mth.HALF_PI, -Mth.HALF_PI + end, COLOR_FG);
         }
 
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
     }
+
     private static void drawArc(Matrix4f matrix, float cx, float cy,
                                  float outerR, float innerR,
-                                 float startAngle, float endAngle,
-                                 int argb) {
+                                 float startAngle, float endAngle, int argb) {
         float a = ((argb >> 24) & 0xFF) / 255f;
         float r = ((argb >> 16) & 0xFF) / 255f;
         float g = ((argb >>  8) & 0xFF) / 255f;
