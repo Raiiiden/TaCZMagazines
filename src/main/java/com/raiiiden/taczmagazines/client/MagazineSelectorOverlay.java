@@ -1,5 +1,6 @@
 package com.raiiiden.taczmagazines.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.raiiiden.taczmagazines.TaCZMagazines;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import net.minecraft.client.Minecraft;
@@ -7,6 +8,7 @@ import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.InputEvent;
@@ -25,6 +27,28 @@ import java.util.Optional;
 @Mod.EventBusSubscriber(modid = TaCZMagazines.MODID, value = Dist.CLIENT)
 public class MagazineSelectorOverlay {
 
+    private static final ResourceLocation MAG_HUD_ATLAS =
+            new ResourceLocation(TaCZMagazines.MODID, "textures/gui/magazine_hud.png");
+
+    private static final int ATLAS_W = 550;
+    private static final int ATLAS_H = 730;
+
+    private static final int SELECTOR_BG_U = 0;
+    private static final int SELECTOR_BG_V = 360;
+    private static final int SELECTOR_BG_W = 473;
+    private static final int SELECTOR_BG_H = 180;
+    private static final int SELECTOR_EXTRA_W = 8;
+    private static final int SELECTOR_EXTRA_H = 6;
+
+    private static final int SLOT_NORMAL_U = 0;
+    private static final int SLOT_NORMAL_V = 575;
+    private static final int SLOT_NORMAL_W = 91;
+    private static final int SLOT_NORMAL_H = 91;
+
+    private static final int SLOT_SELECTED_U = 286;
+    private static final int SLOT_SELECTED_V = 575;
+    private static final int SLOT_SELECTED_W = 91;
+    private static final int SLOT_SELECTED_H = 101;
 
     private static final List<Integer> magazineSlots = new ArrayList<>();
 
@@ -102,11 +126,14 @@ public class MagazineSelectorOverlay {
         int startX = (screenW - totalWidth) / 2;
         int y = screenH - 80;      // above the hotbar
 
-        // Background
         int bgPad = 6;
-        gfx.fill(startX - bgPad, y - bgPad,
-                startX + totalWidth + bgPad, y + slotSize + bgPad + 10,
-                0xBB000000);
+        int panelW = Math.min(SELECTOR_BG_W, totalWidth + bgPad * 2 + SELECTOR_EXTRA_W);
+        int panelH = Math.min(SELECTOR_BG_H, slotSize + bgPad * 2 + 10 + SELECTOR_EXTRA_H);
+        int panelX = (screenW - panelW) / 2;
+        int slotVisualCenterY = y - 2 + slotSize / 2;
+        int panelY = slotVisualCenterY - panelH / 2;
+
+        renderAtlasPanel(gfx, panelX, panelY, panelW, panelH);
 
         // Title
         Component title = Component.literal("Select Magazine");
@@ -117,9 +144,7 @@ public class MagazineSelectorOverlay {
             int x = startX + i * (slotSize + padding);
             boolean selected = (i == selectedIndex);
 
-            // Slot background
-            int bgColor = selected ? 0xCC888833 : 0xCC444444;
-            gfx.fill(x - 2, y - 2, x + slotSize - 2, y + slotSize - 2, bgColor);
+            renderSlotBackground(gfx, x - 2, y - 2, slotSize, selected);
 
             // Item icon
             ItemStack stack = magazineStacks.get(i);
@@ -132,14 +157,48 @@ public class MagazineSelectorOverlay {
                 gfx.drawString(font, ammoStr, x + slotSize - font.width(ammoStr) - 1, y + slotSize - 8, selected ? 0xFFFF44 : 0xAAAAAA);
             }
 
-            // Selection indicator
-            if (selected) {
-                gfx.fill(x - 2, y + slotSize - 2, x + slotSize - 2, y + slotSize, 0xFFFFFF44);
-            }
         }
 
         // Hint
         Component hint = Component.literal("Scroll to select  |  Release R to load");
         gfx.drawCenteredString(font, hint, screenW / 2, y + slotSize + 2, 0xAAAAAA);
+    }
+
+    private static void renderAtlasPanel(GuiGraphics gfx, int x, int y, int w, int h) {
+        float targetAspect = (float) w / h;
+        float sourceAspect = (float) SELECTOR_BG_W / SELECTOR_BG_H;
+
+        int sourceW = SELECTOR_BG_W;
+        int sourceH = SELECTOR_BG_H;
+        if (targetAspect > sourceAspect) {
+            sourceH = Math.round(SELECTOR_BG_W / targetAspect);
+        } else {
+            sourceW = Math.round(SELECTOR_BG_H * targetAspect);
+        }
+
+        int sourceU = SELECTOR_BG_U + (SELECTOR_BG_W - sourceW) / 2;
+        int sourceV = SELECTOR_BG_V + (SELECTOR_BG_H - sourceH) / 2;
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        gfx.blit(MAG_HUD_ATLAS, x, y, w, h,
+                (float) sourceU, (float) sourceV, sourceW, sourceH,
+                ATLAS_W, ATLAS_H);
+        RenderSystem.disableBlend();
+    }
+
+    private static void renderSlotBackground(GuiGraphics gfx, int x, int y, int size, boolean selected) {
+        int sourceU = selected ? SLOT_SELECTED_U : SLOT_NORMAL_U;
+        int sourceV = selected ? SLOT_SELECTED_V : SLOT_NORMAL_V;
+        int sourceW = selected ? SLOT_SELECTED_W : SLOT_NORMAL_W;
+        int sourceH = selected ? SLOT_SELECTED_H : SLOT_NORMAL_H;
+        int drawH = selected ? size + 2 : size;
+
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        gfx.blit(MAG_HUD_ATLAS, x, y, size, drawH,
+                (float) sourceU, (float) sourceV, sourceW, sourceH,
+                ATLAS_W, ATLAS_H);
+        RenderSystem.disableBlend();
     }
 }

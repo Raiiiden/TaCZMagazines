@@ -41,5 +41,10 @@ public class PacketHandler {
                 LoadOneFromHandPacket::encode,
                 LoadOneFromHandPacket::decode,
                 LoadOneFromHandPacket::handle);
+
+        CHANNEL.registerMessage(id++, UnloadOneFromHandPacket.class,
+                UnloadOneFromHandPacket::encode,
+                UnloadOneFromHandPacket::decode,
+                UnloadOneFromHandPacket::handle);
     }
 }

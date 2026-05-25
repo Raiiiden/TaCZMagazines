@@ -184,6 +184,7 @@ public class MagazineItem extends Item implements IAmmoBox {
 
     public boolean overrideStackedOnOther(ItemStack stack, Slot slot, ClickAction action, Player player) {
         if (action != ClickAction.SECONDARY) return false;
+        if (!isPlayerInventorySlot(slot, player)) return false;
 
         ItemStack other = slot.getItem();
         if (!(other.getItem() instanceof IAmmo iAmmo)) return false;
@@ -247,6 +248,7 @@ public class MagazineItem extends Item implements IAmmoBox {
                                             Slot slot, ClickAction action,
                                             Player player, SlotAccess heldAccess) {
         boolean tickBased = MechanicsConfig.TICK_BASED.get();
+        if (!isPlayerInventorySlot(slot, player)) return false;
 
         // ── Empty cursor ──────────────────────────────────────────────────────
         if (heldStack.isEmpty()) {
@@ -460,6 +462,10 @@ public class MagazineItem extends Item implements IAmmoBox {
         entity.playSound(SoundEvents.BUNDLE_INSERT, 0.8F, 0.8F + entity.level().getRandom().nextFloat() * 0.4F);
     }
 
+    private static boolean isPlayerInventorySlot(Slot slot, Player player) {
+        return slot != null && slot.container == player.getInventory();
+    }
+
     @Override
     public int getMaxStackSize(ItemStack stack) {
         return 6;
@@ -561,7 +567,26 @@ public class MagazineItem extends Item implements IAmmoBox {
         }
 
         if (level.isClientSide) {
-            return InteractionResultHolder.success(heldStack);
+            if (MechanicsConfig.IN_HAND_TICK_BASED.get()) {
+                net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
+                        net.minecraftforge.api.distmarker.Dist.CLIENT,
+                        () -> () -> {
+                            if (com.raiiiden.taczmagazines.client.MagazineLoadingHandler.isInHandActive()
+                                    && com.raiiiden.taczmagazines.client.MagazineLoadingHandler.isInHandUnloading()) {
+                                com.raiiiden.taczmagazines.client.MagazineLoadingHandler.cancelInHand();
+                            } else {
+                                com.raiiiden.taczmagazines.client.MagazineLoadingHandler.cancelInHand();
+                                com.raiiiden.taczmagazines.client.MagazineLoadingHandler.startInHandUnloading();
+                            }
+                        });
+            }
+            // consume() instead of success() prevents the arm-swing animation.
+            return InteractionResultHolder.consume(heldStack);
+        }
+
+        // Server: per-bullet packets (UnloadOneFromHandPacket) handle the split.
+        if (MechanicsConfig.IN_HAND_TICK_BASED.get()) {
+            return InteractionResultHolder.consume(heldStack);
         }
 
         if (MechanicsConfig.TICK_BASED.get()) {

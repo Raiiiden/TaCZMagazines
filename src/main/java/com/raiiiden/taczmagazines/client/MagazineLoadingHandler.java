@@ -43,7 +43,7 @@ public class MagazineLoadingHandler {
         pendingDiscovery = true;
     }
 
-    // ── Session state ─────────────────────────────────────────────────────────
+    // ── Inventory session state ───────────────────────────────────────────────
 
     private static boolean active    = false;
     private static boolean unloading = false;
@@ -54,11 +54,24 @@ public class MagazineLoadingHandler {
     // 0.0 → 1.0 progress within the current bullet-interval. Used by the overlay.
     public static float progress = 0f;
 
+    // ── In-hand session state ─────────────────────────────────────────────────
+
+    private static boolean inHandActive    = false;
+    private static boolean inHandUnloading = false;
+    private static int     inHandTick      = 0;
+    private static int     inHandTotal     = 1;
+
+    // 0.0 → 1.0 progress for the in-hand arc drawn on the hotbar slot.
+    public static float inHandProgress = 0f;
+
     // ── Public API ────────────────────────────────────────────────────────────
 
     public static boolean isActive()        { return active; }
     public static boolean isUnloading()     { return unloading; }
     public static int    getContainerSlot() { return containerSlot; }
+
+    public static boolean isInHandActive()    { return inHandActive; }
+    public static boolean isInHandUnloading() { return inHandUnloading; }
 
     public static void startLoading(int slot) {
         active        = true;
@@ -83,6 +96,27 @@ public class MagazineLoadingHandler {
         progress = 0f;
     }
 
+    public static void startInHandLoading() {
+        inHandActive    = true;
+        inHandUnloading = false;
+        inHandTotal     = MechanicsConfig.effectiveLoadTicks();
+        inHandTick      = inHandTotal;
+        inHandProgress  = 0f;
+    }
+
+    public static void startInHandUnloading() {
+        inHandActive    = true;
+        inHandUnloading = true;
+        inHandTotal     = MechanicsConfig.effectiveUnloadTicks();
+        inHandTick      = inHandTotal;
+        inHandProgress  = 0f;
+    }
+
+    public static void cancelInHand() {
+        inHandActive   = false;
+        inHandProgress = 0f;
+    }
+
     // ── Client tick ───────────────────────────────────────────────────────────
 
     @SubscribeEvent
@@ -104,10 +138,32 @@ public class MagazineLoadingHandler {
         }
         pendingDiscovery = false; // families found, no longer needed
 
-        if (!active) return;
-
-        Minecraft mc     = Minecraft.getInstance();
+        Minecraft mc       = Minecraft.getInstance();
         LocalPlayer player = mc.player;
+
+        // ── In-hand session tick ──────────────────────────────────────────────
+        if (inHandActive) {
+            if (player == null || !isInHandSessionStillValid(player)) {
+                cancelInHand();
+            } else {
+                inHandTick--;
+                inHandProgress = 1f - (float) inHandTick / (float) inHandTotal;
+
+                if (inHandTick <= 0) {
+                    if (inHandUnloading) {
+                        PacketHandler.CHANNEL.sendToServer(new com.raiiiden.taczmagazines.network.UnloadOneFromHandPacket());
+                    } else {
+                        PacketHandler.CHANNEL.sendToServer(new com.raiiiden.taczmagazines.network.LoadOneFromHandPacket());
+                    }
+                    inHandTotal    = inHandUnloading ? MechanicsConfig.effectiveUnloadTicks()
+                                                     : MechanicsConfig.effectiveLoadTicks();
+                    inHandTick     = inHandTotal;
+                    inHandProgress = 0f;
+                }
+            }
+        }
+
+        if (!active) return;
 
         // Cancel if inventory is no longer open or player gone
         if (player == null || mc.screen == null) {
@@ -142,6 +198,8 @@ public class MagazineLoadingHandler {
         if (menu == null || containerSlot < 0 || containerSlot >= menu.slots.size()) return false;
 
         Slot slot    = menu.slots.get(containerSlot);
+        if (slot.container != player.getInventory()) return false;
+
         ItemStack mag = slot.getItem();
         if (mag.isEmpty() || !(mag.getItem() instanceof MagazineItem magItem)) return false;
 
@@ -166,6 +224,40 @@ public class MagazineLoadingHandler {
         }
     }
 
+    // ── Validate in-hand session each tick ───────────────────────────────────
+
+    private static boolean isInHandSessionStillValid(LocalPlayer player) {
+        ItemStack held = player.getMainHandItem();
+        if (held.isEmpty() || !(held.getItem() instanceof MagazineItem magItem)) return false;
+
+        if (inHandUnloading) {
+            return magItem.getAmmoCount(held) > 0;
+        } else {
+            int current = magItem.getAmmoCount(held);
+            if (current >= MagazineItem.getMaxCapacity(held)) return false;
+            return hasCompatibleAmmo(player, held, magItem);
+        }
+    }
+
+    // Returns true if player has at least one ammo stack compatible with the held magazine.
+    private static boolean hasCompatibleAmmo(LocalPlayer player, ItemStack mag, MagazineItem magItem) {
+        String familyId = MagazineItem.getMagazineFamilyId(mag);
+        if (familyId == null) return false;
+        ResourceLocation familyAmmo = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
+        if (familyAmmo == null) return false;
+        ResourceLocation magAmmoId = magItem.getAmmoId(mag);
+
+        for (ItemStack s : player.getInventory().items) {
+            if (s.isEmpty() || !(s.getItem() instanceof IAmmo iAmmo)) continue;
+            ResourceLocation ammoId = iAmmo.getAmmoId(s);
+            if (DefaultAssets.EMPTY_AMMO_ID.equals(ammoId)) continue;
+            if (!familyAmmo.equals(ammoId)) continue;
+            if (!DefaultAssets.EMPTY_AMMO_ID.equals(magAmmoId) && !magAmmoId.equals(ammoId)) continue;
+            return true;
+        }
+        return false;
+    }
+
     // ── Block left-clicks in inventory during active unload session ───────────
 
     @SubscribeEvent
@@ -176,41 +268,49 @@ public class MagazineLoadingHandler {
         }
     }
 
-    // ── Left-click in-game while holding a mag: load one bullet (tick-based) ──
+    // ── Attack key while holding a magazine: cancel block-break + arm-swing ──
+    // Also handles starting/stopping the in-hand tick session (IN_HAND_TICK_BASED)
+    // and the legacy single-bullet fire (TICK_BASED without IN_HAND_TICK_BASED).
+
+    @SubscribeEvent
+    public static void onInteractionKey(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isAttack()) return;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || !InputExtraCheck.isInGame()) return;
+
+        ItemStack held = mc.player.getMainHandItem();
+        if (!(held.getItem() instanceof MagazineItem magItem)) return;
+
+        // Cancel the attack unconditionally: prevents block breaking and arm swing.
+        event.setCanceled(true);
+
+        if (MechanicsConfig.IN_HAND_TICK_BASED.get()) {
+            if (inHandActive && !inHandUnloading) {
+                cancelInHand();
+                return;
+            }
+            cancelInHand(); // stop any active unload session before starting load
+            if (hasCompatibleAmmo((LocalPlayer) mc.player, held, magItem)
+                    && magItem.getAmmoCount(held) < MagazineItem.getMaxCapacity(held)) {
+                startInHandLoading();
+            }
+        } else if (MechanicsConfig.TICK_BASED.get()) {
+            // Legacy: single bullet per click from inventory
+            if (magItem.getAmmoCount(held) < MagazineItem.getMaxCapacity(held)
+                    && hasCompatibleAmmo((LocalPlayer) mc.player, held, magItem)) {
+                PacketHandler.CHANNEL.sendToServer(new com.raiiiden.taczmagazines.network.LoadOneFromHandPacket());
+            }
+        }
+        // If neither config is on, the cancel above is still applied (no block break, no arm swing).
+    }
+
+    // ── Left-click empty (kept for safety; normally pre-empted by onInteractionKey) ──
 
     @SubscribeEvent
     public static void onLeftClickEmpty(PlayerInteractEvent.LeftClickEmpty event) {
-        // NOTE: LeftClickEmpty is NOT cancellable — do not call setCanceled.
-        if (!MechanicsConfig.TICK_BASED.get()) return;
-
-        ItemStack held = event.getEntity().getMainHandItem();
-        if (!(held.getItem() instanceof MagazineItem magItem)) return;
-
-        int maxCap  = MagazineItem.getMaxCapacity(held);
-        int current = magItem.getAmmoCount(held);
-        if (current >= maxCap) return;
-
-        // Quick client-side check: does the player have any compatible ammo?
-        String familyId = MagazineItem.getMagazineFamilyId(held);
-        if (familyId == null) return;
-        ResourceLocation familyAmmo = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
-        if (familyAmmo == null) return;
-
-        ResourceLocation magAmmoId = magItem.getAmmoId(held);
-        LocalPlayer player = (LocalPlayer) event.getEntity();
-        boolean hasAmmo = false;
-        for (ItemStack s : player.getInventory().items) {
-            if (s.isEmpty() || !(s.getItem() instanceof IAmmo iAmmo)) continue;
-            ResourceLocation ammoId = iAmmo.getAmmoId(s);
-            if (DefaultAssets.EMPTY_AMMO_ID.equals(ammoId)) continue;
-            if (!familyAmmo.equals(ammoId)) continue;
-            if (!DefaultAssets.EMPTY_AMMO_ID.equals(magAmmoId) && !magAmmoId.equals(ammoId)) continue;
-            hasAmmo = true;
-            break;
-        }
-        if (!hasAmmo) return;
-
-        PacketHandler.CHANNEL.sendToServer(new com.raiiiden.taczmagazines.network.LoadOneFromHandPacket());
+        // onInteractionKey cancels attack before this fires when holding a magazine.
+        // This handler is kept as a safety net but should not execute for magazine holders.
     }
 
     // ── Key input ─────────────────────────────────────────────────────────────
@@ -220,9 +320,11 @@ public class MagazineLoadingHandler {
         if (event.getAction() != GLFW.GLFW_PRESS) return;
 
         // Cancel any active session when the player presses Escape
-        if (active && event.getKey() == GLFW.GLFW_KEY_ESCAPE) {
-            cancel();
-            return;
+        if (event.getKey() == GLFW.GLFW_KEY_ESCAPE) {
+            boolean handled = active || inHandActive;
+            if (active) cancel();
+            if (inHandActive) cancelInHand();
+            if (handled) return;
         }
 
         // Unload magazine from held gun via the configured keybind (checks key + modifier)

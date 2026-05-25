@@ -5,6 +5,7 @@ import com.raiiiden.taczmagazines.capability.GunMagazineCapability;
 import com.raiiiden.taczmagazines.capability.GunMagazineProvider;
 import com.raiiiden.taczmagazines.client.ClientReloadKeyHandler;
 import com.raiiiden.taczmagazines.item.MagazineItem;
+import com.raiiiden.taczmagazines.magazine.GunMagazineInitializer;
 import com.raiiiden.taczmagazines.network.OpenSelectorPacket;
 import com.tacz.guns.api.DefaultAssets;
 import com.tacz.guns.api.TimelessAPI;
@@ -34,6 +35,8 @@ public abstract class MixinAbstractGunItem {
 
     @Inject(method = "findAndExtractInventoryAmmo", at = @At("HEAD"), cancellable = true)
     private void onFindAndExtractInventoryAmmo(IItemHandler itemHandler, ItemStack gunItem, int needAmmoCount, CallbackInfoReturnable<Integer> cir) {
+        GunMagazineInitializer.ensureMagazineForLoadedGun(gunItem);
+
         TaCZMagazines.LOGGER.debug("=== findAndExtractInventoryAmmo === needAmmoCount={} currentAmmo={}",
                 needAmmoCount, ((AbstractGunItem)(Object)this).getCurrentAmmoCount(gunItem));
 
@@ -168,6 +171,8 @@ public abstract class MixinAbstractGunItem {
 
     @Inject(method = "canReload", at = @At("HEAD"), cancellable = true)
     private void onCanReload(LivingEntity shooter, ItemStack gunItem, CallbackInfoReturnable<Boolean> cir) {
+        GunMagazineInitializer.ensureMagazineForLoadedGun(gunItem);
+
         TaCZMagazines.LOGGER.debug("=== canReload === currentAmmo={}",
                 ((AbstractGunItem)(Object)this).getCurrentAmmoCount(gunItem));
 
@@ -283,6 +288,8 @@ public abstract class MixinAbstractGunItem {
 
     @Inject(method = "dropAllAmmo", at = @At("HEAD"), cancellable = true)
     private void onDropAllAmmo(Player player, ItemStack gunItem, CallbackInfo ci) {
+        GunMagazineInitializer.ensureMagazineForLoadedGun(gunItem);
+
         AbstractGunItem gunItemInstance = (AbstractGunItem)(Object) this;
         TaCZMagazines.LOGGER.debug("=== dropAllAmmo === currentAmmo={}", gunItemInstance.getCurrentAmmoCount(gunItem));
 
