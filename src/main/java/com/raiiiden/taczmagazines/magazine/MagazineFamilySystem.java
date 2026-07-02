@@ -4,6 +4,8 @@ import com.raiiiden.taczmagazines.TaCZMagazines;
 import com.tacz.guns.resource.CommonAssetsManager;
 import com.tacz.guns.resource.ICommonResourceProvider;
 import com.tacz.guns.resource.index.CommonGunIndex;
+import com.tacz.guns.api.item.gun.FireMode;
+import com.tacz.guns.resource.pojo.data.gun.Bolt;
 import com.tacz.guns.resource.pojo.data.gun.FeedType;
 import net.minecraft.resources.ResourceLocation;
 
@@ -175,6 +177,27 @@ public class MagazineFamilySystem {
                     || scriptParams.keySet().stream().anyMatch(k -> k.matches("round\\d+_feed"));
             if (hasPerRoundFeed) {
                 if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — has per-round feed script params (loop_feed/round#_feed/clip_load_feed)", gunId);
+                return false;
+            }
+        }
+
+        // Revolvers are declared as ordinary "magazine"-type reloads with a single feed timer and
+        // no per-round feed script, so every check above passes them like a detachable-mag gun.
+        // The signal that separates them from every real magazine-fed gun is the action: revolvers
+        // are open-bolt AND semi-only. Every open-bolt gun that genuinely feeds from a magazine
+        // (uzi, m249, aa12, minigun, fn_evolys...) carries a full-auto or burst mode; the remaining
+        // open-bolt/semi-only guns are revolvers plus single-shot launchers/break-actions, and those
+        // are already excluded above by the capacity (<=2) and feed-type gates. This catches
+        // revolvers even when a pack gives them expandable "extended magazine" values (e.g.
+        // suffuse:python, ext [8,10,12] over a 6-round base) — which the old non-expandable-cylinder
+        // test missed. (TaCZ's `charging` block, the other revolver tell, is not exposed by the
+        // GunData API, so the fire-mode set stands in for it here.)
+        if (index.getGunData().getBolt() == Bolt.OPEN_BOLT) {
+            List<FireMode> fireModes = index.getGunData().getFireModeSet();
+            boolean rapidFire = fireModes != null && fireModes.stream()
+                    .anyMatch(m -> m == FireMode.AUTO || m == FireMode.BURST);
+            if (!rapidFire) {
+                if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — revolver fingerprint (open-bolt + semi-only, {}-round)", gunId, ammoAmount);
                 return false;
             }
         }

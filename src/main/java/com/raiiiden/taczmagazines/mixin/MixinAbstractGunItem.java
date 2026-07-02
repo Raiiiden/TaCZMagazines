@@ -78,6 +78,7 @@ public abstract class MixinAbstractGunItem {
         int currentAmmo = gunItemInstance.getCurrentAmmoCount(gunItem);
         ResourceLocation gunAmmoId = gunIndex.getGunData().getAmmoId();
 
+        boolean[] ejectFailed = {false};
         gunItem.getCapability(GunMagazineProvider.GUN_MAGAZINE).ifPresent(magCap -> {
             if (!magCap.hasMagazine()) return;
             ItemStack storedMag = magCap.getStoredMagazine();
@@ -92,11 +93,26 @@ public abstract class MixinAbstractGunItem {
                 magCap.setStoredMagazine(storedMag);
                 storedMag = magCap.getStoredMagazine();
             }
+            // Try to eject FIRST and only commit the swap if the mag actually fit. A single mag
+            // inserts all-or-nothing, so a non-empty leftover means the inventory was full — in
+            // that case keep the mag in the gun instead of letting insertItemStacked silently
+            // destroy it, and abort the swap (reload becomes a no-op).
+            ItemStack leftover = ItemHandlerHelper.insertItemStacked(itemHandler, storedMag, false);
+            if (!leftover.isEmpty()) {
+                magCap.setStoredMagazine(leftover);
+                ejectFailed[0] = true;
+                TaCZMagazines.LOGGER.debug("  inventory full — kept mag in gun, aborting swap");
+                return;
+            }
             magCap.clearMagazine();
-            ItemHandlerHelper.insertItemStacked(itemHandler, storedMag, false);
             TaCZMagazines.LOGGER.debug("  ejected stored mag back to inventory with ammo={}", currentAmmo);
             gunItemInstance.setCurrentAmmoCount(gunItem, 0);
         });
+
+        if (ejectFailed[0]) {
+            cir.setReturnValue(0);
+            return;
+        }
 
         // No stored mag — find one in inventory.
         int selectedSlot = -1;

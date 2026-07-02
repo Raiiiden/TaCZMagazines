@@ -119,6 +119,15 @@ public class MagazineSelectorOverlay {
         int screenW = mc.getWindow().getGuiScaledWidth();
         int screenH = mc.getWindow().getGuiScaledHeight();
 
+        // Lock the whole selector cluster to its scale-3 size, scaling in place around its centre.
+        float scaleFactor = HudScaleUtil.lockFactor();
+        float anchorX = screenW / 2f;
+        float anchorY = screenH - 70f;
+        gfx.pose().pushPose();
+        gfx.pose().translate(anchorX, anchorY, 0f);
+        gfx.pose().scale(scaleFactor, scaleFactor, 1f);
+        gfx.pose().translate(-anchorX, -anchorY, 0f);
+
         int count = magazineStacks.size();
         int slotSize = 20;         // px per slot (icon + padding)
         int padding = 4;
@@ -162,6 +171,8 @@ public class MagazineSelectorOverlay {
         // Hint
         Component hint = Component.literal("Scroll to select  |  Release R to load");
         gfx.drawCenteredString(font, hint, screenW / 2, y + slotSize + 2, 0xAAAAAA);
+
+        gfx.pose().popPose();
     }
 
     private static void renderAtlasPanel(GuiGraphics gfx, int x, int y, int w, int h) {

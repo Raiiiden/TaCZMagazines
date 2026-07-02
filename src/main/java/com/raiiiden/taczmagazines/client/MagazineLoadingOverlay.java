@@ -41,7 +41,15 @@ public class MagazineLoadingOverlay {
         float cx = (float) mouseX;
         float cy = (float) mouseY;
 
-        Matrix4f matrix = event.getGuiGraphics().pose().last().pose();
+        // Lock the ring to its scale-3 size by scaling the pose around the cursor before we
+        // capture the matrix used for the raw vertex arcs below.
+        var pose = event.getGuiGraphics().pose();
+        float scaleFactor = HudScaleUtil.lockFactor();
+        pose.pushPose();
+        pose.translate(cx, cy, 0f);
+        pose.scale(scaleFactor, scaleFactor, 1f);
+        pose.translate(-cx, -cy, 0f);
+        Matrix4f matrix = pose.last().pose();
 
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
@@ -60,6 +68,8 @@ public class MagazineLoadingOverlay {
 
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
+
+        pose.popPose();
     }
     private static void drawArc(Matrix4f matrix, float cx, float cy,
                                  float outerR, float innerR,

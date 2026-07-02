@@ -119,6 +119,20 @@ public class MagazineAmmoHudOverlay {
         GuiGraphics gfx = event.getGuiGraphics();
         Font font = mc.font;
 
+        // Only clamp when the GUI scale is above 3 (leaving 1-3 aligned with TaCZ's gun icon).
+        // Each group scales around its OWN right edge rather than a single shared pivot: a shared
+        // pivot on the loaded icon dragged the reserves rightward into it (worse the higher the
+        // scale). Pinning each group's right edge keeps the loaded icon locked to TaCZ's readout
+        // and keeps the reserve row locked at its own right edge, so the two never converge.
+        float scaleFactor = HudScaleUtil.clampAboveFactor();
+        float loadedRight = loadedLeft + loadW;
+
+        // ── reserve row (pivots on its own right edge, contracts leftward) ──
+        gfx.pose().pushPose();
+        gfx.pose().translate(reserveRight, centerY, 0f);
+        gfx.pose().scale(scaleFactor, scaleFactor, 1f);
+        gfx.pose().translate(-reserveRight, -centerY, 0f);
+
         for (int i = 0; i < displayCount; i++) {
             MagEntry e = reserves.get(i);
             int x = reserveStart + i * (resW + resGap);
@@ -134,8 +148,17 @@ public class MagazineAmmoHudOverlay {
                     0xFF888888, false);
         }
 
-        // ── loaded silhouette (larger, brighter border) ────────────────────
+        gfx.pose().popPose();
+
+        // ── loaded silhouette (pivots on its own right edge, abuts the readout) ──
+        gfx.pose().pushPose();
+        gfx.pose().translate(loadedRight, centerY, 0f);
+        gfx.pose().scale(scaleFactor, scaleFactor, 1f);
+        gfx.pose().translate(-loadedRight, -centerY, 0f);
+
         renderMagazineFrame(gfx, loadedLeft, loadedTop, loadW, loadH, currentAmmo, maxAmmo, LOADED_U, LOADED_V, LOADED_FRAMES);
+
+        gfx.pose().popPose();
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

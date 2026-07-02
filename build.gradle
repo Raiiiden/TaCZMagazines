@@ -140,7 +140,7 @@ repositories {
 dependencies {
     minecraft "net.neoforged:forge:${mc_version}-${neo_version}"
     annotationProcessor "org.spongepowered:mixin:0.8.5:processor"
-    implementation fg.deobf("curse.maven:timeless-and-classics-zero-1028108:7745481")
+    implementation fg.deobf("curse.maven:timeless-and-classics-zero-1028108:8141310")
 
     // implementation fg.deobf("curse.maven:tacz-tweaks-1193263:7188921")
     // implementation "curse.maven:kotlin-for-forge-351264:5402061"
