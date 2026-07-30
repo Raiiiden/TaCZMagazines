@@ -6,12 +6,15 @@ import com.raiiiden.taczmagazines.config.FamilyConfigManager;
 import com.raiiiden.taczmagazines.config.GunOverrideConfig;
 import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
+import com.raiiiden.taczmagazines.crafting.MagazineRecipeOverrides;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
+import com.raiiiden.taczmagazines.item.SoundRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.raiiiden.taczmagazines.network.PacketHandler;
 import net.minecraft.network.chat.Component;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.capabilities.RegisterCapabilitiesEvent;
+import net.minecraftforge.event.AddReloadListenerEvent;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.OnDatapackSyncEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -42,11 +45,13 @@ public class TaCZMagazines {
 
     // Register magazines
     MagazineRegistrar.register();
+    SoundRegistrar.register();
 
     // Event bus listeners
     FMLJavaModLoadingContext.get().getModEventBus().addListener(this::commonSetup);
     FMLJavaModLoadingContext.get().getModEventBus().addListener(this::registerCapabilities);
     MinecraftForge.EVENT_BUS.addListener(this::registerCommands);
+    MinecraftForge.EVENT_BUS.addListener(this::addReloadListeners);
     MinecraftForge.EVENT_BUS.addListener(this::onDatapackSync);
     MinecraftForge.EVENT_BUS.addListener(this::onPlayerLoggedIn);
 
@@ -76,6 +81,10 @@ public class TaCZMagazines {
   private void registerCommands(RegisterCommandsEvent event) {
     event.getDispatcher().register(MagazineCommands.register());
     LOGGER.info("[{}] Registered magazine commands", MODID);
+  }
+
+  private void addReloadListeners(AddReloadListenerEvent event) {
+    event.addListener(MagazineRecipeOverrides.INSTANCE);
   }
 
   @SubscribeEvent

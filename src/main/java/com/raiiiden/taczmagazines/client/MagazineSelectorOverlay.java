@@ -3,6 +3,9 @@ package com.raiiiden.taczmagazines.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.raiiiden.taczmagazines.TaCZMagazines;
 import com.raiiiden.taczmagazines.item.MagazineItem;
+import com.raiiiden.taczmagazines.item.AmmoBoxMagazineStorage;
+import com.raiiiden.taczmagazines.item.MagazineReloadSource;
+import com.tacz.guns.api.item.IAmmoBox;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -75,6 +78,18 @@ public class MagazineSelectorOverlay {
                     if (magItem.isAmmoBoxOfGun(gun, stack) && magItem.getAmmoCount(stack) > 0) {
                         magazineSlots.add(i);
                         magazineStacks.add(stack.copy());
+                    }
+                } else if (AmmoBoxMagazineStorage.isExternalAmmoBox(stack)) {
+                    ItemStack boxedMagazine;
+                    IAmmoBox box = (IAmmoBox) stack.getItem();
+                    if (box.isAllTypeCreative(stack)) {
+                        boxedMagazine = MagazineReloadSource.createFullMagazineForGun(gun);
+                    } else {
+                        boxedMagazine = AmmoBoxMagazineStorage.peekBestCompatible(stack, gun);
+                    }
+                    if (!boxedMagazine.isEmpty()) {
+                        magazineSlots.add(i);
+                        magazineStacks.add(boxedMagazine);
                     }
                 }
             }

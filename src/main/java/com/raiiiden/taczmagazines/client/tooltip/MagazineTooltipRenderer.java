@@ -130,13 +130,7 @@ public class MagazineTooltipRenderer implements ClientTooltipComponent {
     }
 
     private static String formatAmmoName(ResourceLocation ammoId) {
-        // e.g. "tacz:9x19mm" → "9x19mm"
-        String path = ammoId.getPath();
-        // Strip common prefixes like "ammo_" if present
-        if (path.startsWith("ammo_")) path = path.substring(5);
-        // Capitalise first letter
-        if (!path.isEmpty()) path = Character.toUpperCase(path.charAt(0)) + path.substring(1);
-        return path;
+        return MagazineFamilySystem.getAmmoDisplayName(ammoId);
     }
 
     private static int getFillColor(int current, int max) {

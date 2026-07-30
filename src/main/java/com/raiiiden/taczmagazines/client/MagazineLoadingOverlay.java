@@ -41,15 +41,11 @@ public class MagazineLoadingOverlay {
         float cx = (float) mouseX;
         float cy = (float) mouseY;
 
-        // Lock the ring to its scale-3 size by scaling the pose around the cursor before we
-        // capture the matrix used for the raw vertex arcs below.
-        var pose = event.getGuiGraphics().pose();
-        float scaleFactor = HudScaleUtil.lockFactor();
-        pose.pushPose();
-        pose.translate(cx, cy, 0f);
-        pose.scale(scaleFactor, scaleFactor, 1f);
-        pose.translate(-cx, -cy, 0f);
-        Matrix4f matrix = pose.last().pose();
+        // GUI coordinates already scale together with the carried item.
+        // Drawing directly in that coordinate space keeps the ring's scale-3
+        // proportions constant relative to the item at every GUI scale and
+        // framebuffer resolution.
+        Matrix4f matrix = event.getGuiGraphics().pose().last().pose();
 
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
@@ -69,7 +65,6 @@ public class MagazineLoadingOverlay {
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
 
-        pose.popPose();
     }
     private static void drawArc(Matrix4f matrix, float cx, float cy,
                                  float outerR, float innerR,

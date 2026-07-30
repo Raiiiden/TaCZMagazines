@@ -35,6 +35,11 @@ public class SelectMagazinePacket {
             // slot = -1 means tap reload — no slot tag needed.
             ItemStack gun = player.getMainHandItem();
             if (!gun.isEmpty()) {
+                if (player.getAbilities().instabuild) {
+                    gun.getOrCreateTag().putBoolean("TaCZMag_CreativeReload", true);
+                } else {
+                    gun.getOrCreateTag().remove("TaCZMag_CreativeReload");
+                }
                 if (msg.slot >= 0) {
                     gun.getOrCreateTag().putInt("TaCZMag_SelectedSlot", msg.slot);
                 } else {

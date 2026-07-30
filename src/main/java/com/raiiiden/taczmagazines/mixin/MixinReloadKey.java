@@ -8,6 +8,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.lwjgl.glfw.GLFW;
 
 @Mixin(value = ReloadKey.class, remap = false)
 public abstract class MixinReloadKey {
@@ -15,7 +16,7 @@ public abstract class MixinReloadKey {
     @Inject(method = "onReloadPress", at = @At("HEAD"), cancellable = true)
     private static void interceptReloadPress(InputEvent.Key event, CallbackInfo ci) {
         if (!InputExtraCheck.isInGame()) return;
-        if (event.getAction() != 1 /* GLFW_PRESS */) return;
+        if (event.getAction() != GLFW.GLFW_PRESS) return;
         if (!ReloadKey.RELOAD_KEY.matches(event.getKey(), event.getScanCode())) return;
 
         // If the unload keybind matches (key + modifier), unload takes priority over reload.
@@ -36,7 +37,7 @@ public abstract class MixinReloadKey {
     @Inject(method = "onReloadPress", at = @At("HEAD"), cancellable = true)
     private static void interceptReloadRelease(InputEvent.Key event, CallbackInfo ci) {
         if (!InputExtraCheck.isInGame()) return;
-        if (event.getAction() != 0 /* GLFW_RELEASE */) return;
+        if (event.getAction() != GLFW.GLFW_RELEASE) return;
         if (!ReloadKey.RELOAD_KEY.matches(event.getKey(), event.getScanCode())) return;
 
         ClientReloadKeyHandler.onReloadKeyReleased();

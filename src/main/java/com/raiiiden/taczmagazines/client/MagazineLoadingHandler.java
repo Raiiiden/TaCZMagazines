@@ -5,20 +5,22 @@ import com.raiiiden.taczmagazines.config.GunOverrideConfig;
 import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.crafting.GunsmithIntegration;
 import com.raiiiden.taczmagazines.item.MagazineItem;
+import com.raiiiden.taczmagazines.item.MagazineAmmoSource;
+import com.raiiiden.taczmagazines.item.SoundRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.raiiiden.taczmagazines.network.BulletTransferPacket;
 import com.raiiiden.taczmagazines.network.PacketHandler;
 import com.raiiiden.taczmagazines.network.UnloadGunMagPacket;
 import com.tacz.guns.api.DefaultAssets;
-import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IGun;
+import com.tacz.guns.api.item.builder.AmmoItemBuilder;
 import com.tacz.guns.resource.CommonAssetsManager;
 import com.tacz.guns.util.InputExtraCheck;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.InputEvent;
@@ -47,6 +49,9 @@ public class MagazineLoadingHandler {
 
     private static boolean active    = false;
     private static boolean unloading = false;
+    // Index in Player#getInventory(), not an AbstractContainerMenu slot index.
+    // Creative's inventory screen is client-only and does not share the
+    // survival container's slot numbering.
     private static int containerSlot = -1;
     private static int tickCounter   = 0;
     private static int totalTicks    = 1;
@@ -60,6 +65,7 @@ public class MagazineLoadingHandler {
     private static boolean inHandUnloading = false;
     private static int     inHandTick      = 0;
     private static int     inHandTotal     = 1;
+    private static boolean unloadActiveBeforeMousePress = false;
 
     // 0.0 → 1.0 progress for the in-hand arc drawn on the hotbar slot.
     public static float inHandProgress = 0f;
@@ -150,7 +156,13 @@ public class MagazineLoadingHandler {
                 inHandProgress = 1f - (float) inHandTick / (float) inHandTotal;
 
                 if (inHandTick <= 0) {
-                    if (inHandUnloading) {
+                    if (player.getAbilities().instabuild) {
+                        if (inHandUnloading) {
+                            creativeUnloadOneFromHand(player);
+                        } else {
+                            creativeLoadOneInHand(player);
+                        }
+                    } else if (inHandUnloading) {
                         PacketHandler.CHANNEL.sendToServer(new com.raiiiden.taczmagazines.network.UnloadOneFromHandPacket());
                     } else {
                         PacketHandler.CHANNEL.sendToServer(new com.raiiiden.taczmagazines.network.LoadOneFromHandPacket());
@@ -158,7 +170,9 @@ public class MagazineLoadingHandler {
                     inHandTotal    = inHandUnloading ? MechanicsConfig.effectiveUnloadTicks()
                                                      : MechanicsConfig.effectiveLoadTicks();
                     inHandTick     = inHandTotal;
-                    inHandProgress = 0f;
+                    // Preserve the completed circle for the render frame after
+                    // the transfer. The next tick advances the new interval.
+                    inHandProgress = 1f;
                 }
             }
         }
@@ -182,25 +196,166 @@ public class MagazineLoadingHandler {
 
         if (tickCounter <= 0) {
             // Time to transfer one bullet
-            PacketHandler.CHANNEL.sendToServer(new BulletTransferPacket(containerSlot, unloading));
+            if (player.getAbilities().instabuild) {
+                creativeTransferInventoryRound(player);
+            } else {
+                PacketHandler.CHANNEL.sendToServer(new BulletTransferPacket(containerSlot, unloading));
+            }
 
             // Reset counter for next bullet
             totalTicks  = unloading ? MechanicsConfig.effectiveUnloadTicks()
                                      : MechanicsConfig.effectiveLoadTicks();
             tickCounter = totalTicks;
-            progress    = 0f;
+            // Preserve the completed circle for the render frame after the
+            // transfer. The next tick advances the new interval.
+            progress    = 1f;
         }
+    }
+
+    // Applies one creative transfer per timer interval and synchronizes it.
+    private static void creativeTransferInventoryRound(LocalPlayer player) {
+        if (containerSlot < 0 || containerSlot >= player.getInventory().items.size()) return;
+        ItemStack magazine = player.getInventory().getItem(containerSlot);
+        if (!(magazine.getItem() instanceof MagazineItem magItem)
+                || magazine.isEmpty()) return;
+
+        ItemStack extras;
+        if (unloading) {
+            int current = magItem.getAmmoCount(magazine);
+            ResourceLocation ammoId = magItem.getAmmoId(magazine);
+            if (current <= 0 || DefaultAssets.EMPTY_AMMO_ID.equals(ammoId)) return;
+
+            extras = splitMagazineStack(magazine);
+            magItem.setAmmoCount(magazine, current - 1);
+            if (current == 1) magItem.setAmmoId(magazine, DefaultAssets.EMPTY_AMMO_ID);
+            returnCreativeInventoryRound(player, ammoId);
+            SoundRegistrar.playMagazineUnload(player);
+        } else {
+            String familyId = MagazineItem.getMagazineFamilyId(magazine);
+            ResourceLocation familyAmmo = familyId == null
+                    ? null
+                    : MagazineFamilySystem.getAmmoTypeForFamily(familyId);
+            int current = magItem.getAmmoCount(magazine);
+            if (familyAmmo == null || current >= MagazineItem.getMaxCapacity(magazine)) return;
+
+            ResourceLocation loadedAmmo = magItem.getAmmoId(magazine);
+            if (!DefaultAssets.EMPTY_AMMO_ID.equals(loadedAmmo)
+                    && !loadedAmmo.equals(familyAmmo)) return;
+
+            extras = splitMagazineStack(magazine);
+            magItem.setAmmoId(magazine, familyAmmo);
+            magItem.setAmmoCount(magazine, current + 1);
+            SoundRegistrar.playMagazineLoad(player);
+        }
+
+        returnSplitMagazines(player, extras);
+        syncCreativeInventory(player, containerSlot, !extras.isEmpty());
+    }
+
+    private static void creativeLoadOneInHand(LocalPlayer player) {
+        ItemStack magazine = player.getMainHandItem();
+        if (!(magazine.getItem() instanceof MagazineItem magItem)) return;
+
+        String familyId = MagazineItem.getMagazineFamilyId(magazine);
+        ResourceLocation familyAmmo = familyId == null
+                ? null
+                : MagazineFamilySystem.getAmmoTypeForFamily(familyId);
+        int current = magItem.getAmmoCount(magazine);
+        if (familyAmmo == null || current >= MagazineItem.getMaxCapacity(magazine)) return;
+
+        ResourceLocation loadedAmmo = magItem.getAmmoId(magazine);
+        if (!DefaultAssets.EMPTY_AMMO_ID.equals(loadedAmmo)
+                && !loadedAmmo.equals(familyAmmo)) return;
+
+        ItemStack extras = splitMagazineStack(magazine);
+        magItem.setAmmoId(magazine, familyAmmo);
+        magItem.setAmmoCount(magazine, current + 1);
+        returnSplitMagazines(player, extras);
+        syncCreativeInventory(player, player.getInventory().selected, !extras.isEmpty());
+        SoundRegistrar.playMagazineLoad(player);
+    }
+
+    private static void creativeUnloadOneFromHand(LocalPlayer player) {
+        ItemStack magazine = player.getMainHandItem();
+        if (!(magazine.getItem() instanceof MagazineItem magItem)) return;
+
+        int current = magItem.getAmmoCount(magazine);
+        ResourceLocation ammoId = magItem.getAmmoId(magazine);
+        if (current <= 0 || DefaultAssets.EMPTY_AMMO_ID.equals(ammoId)) return;
+
+        ItemStack extras = splitMagazineStack(magazine);
+        magItem.setAmmoCount(magazine, current - 1);
+        if (current == 1) magItem.setAmmoId(magazine, DefaultAssets.EMPTY_AMMO_ID);
+        returnSplitMagazines(player, extras);
+
+        ItemStack bullet = AmmoItemBuilder.create().setId(ammoId).setCount(1).build();
+        if (!player.getInventory().add(bullet)) player.drop(bullet, false);
+        syncCreativeInventory(player, player.getInventory().selected, true);
+        SoundRegistrar.playMagazineUnload(player);
+    }
+
+    private static ItemStack splitMagazineStack(ItemStack magazine) {
+        if (magazine.getCount() <= 1) return ItemStack.EMPTY;
+        return magazine.split(magazine.getCount() - 1);
+    }
+
+    private static void returnSplitMagazines(LocalPlayer player, ItemStack extras) {
+        if (!extras.isEmpty() && !player.getInventory().add(extras)) {
+            player.drop(extras, false);
+        }
+    }
+
+    private static void returnCreativeInventoryRound(LocalPlayer player, ResourceLocation ammoId) {
+        AbstractContainerMenu menu = getVisibleMenu(player);
+        if (menu == null) return;
+
+        ItemStack bullet = AmmoItemBuilder.create().setId(ammoId).setCount(1).build();
+        ItemStack cursor = menu.getCarried();
+        if (cursor.isEmpty()) {
+            menu.setCarried(bullet);
+        } else if (ItemStack.isSameItemSameTags(cursor, bullet)
+                && cursor.getCount() < cursor.getMaxStackSize()) {
+            cursor.grow(1);
+            menu.setCarried(cursor);
+        } else if (!player.getInventory().add(bullet)) {
+            player.drop(bullet, false);
+        }
+    }
+
+    private static AbstractContainerMenu getVisibleMenu(LocalPlayer player) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.screen instanceof AbstractContainerScreen<?> screen) {
+            return screen.getMenu();
+        }
+        return player.containerMenu;
+    }
+
+    private static void syncCreativeInventory(LocalPlayer player, int changedSlot, boolean syncAll) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gameMode == null) return;
+
+        if (syncAll) {
+            for (int inventorySlot = 0; inventorySlot < player.getInventory().items.size(); inventorySlot++) {
+                mc.gameMode.handleCreativeModeItemAdd(
+                        player.getInventory().getItem(inventorySlot).copy(),
+                        inventoryMenuSlot(inventorySlot));
+            }
+        } else {
+            mc.gameMode.handleCreativeModeItemAdd(
+                    player.getInventory().getItem(changedSlot).copy(),
+                    inventoryMenuSlot(changedSlot));
+        }
+        player.getInventory().setChanged();
+    }
+
+    private static int inventoryMenuSlot(int inventorySlot) {
+        return inventorySlot < 9 ? 36 + inventorySlot : inventorySlot;
     }
 
     // Checks client-side inventory state to decide whether the session should continue.
     private static boolean isSessionStillValid(LocalPlayer player) {
-        AbstractContainerMenu menu = player.containerMenu;
-        if (menu == null || containerSlot < 0 || containerSlot >= menu.slots.size()) return false;
-
-        Slot slot    = menu.slots.get(containerSlot);
-        if (slot.container != player.getInventory()) return false;
-
-        ItemStack mag = slot.getItem();
+        if (containerSlot < 0 || containerSlot >= player.getInventory().items.size()) return false;
+        ItemStack mag = player.getInventory().getItem(containerSlot);
         if (mag.isEmpty() || !(mag.getItem() instanceof MagazineItem magItem)) return false;
 
         if (unloading) {
@@ -208,17 +363,15 @@ public class MagazineLoadingHandler {
             return magItem.getAmmoCount(mag) > 0;
         } else {
             // Loading: cursor must still have compatible ammo, magazine must have space
-            ItemStack cursor = menu.getCarried();
-            if (cursor.isEmpty() || !(cursor.getItem() instanceof IAmmo iAmmo)) return false;
-
-            ResourceLocation heldAmmoId = iAmmo.getAmmoId(cursor);
-            if (DefaultAssets.EMPTY_AMMO_ID.equals(heldAmmoId)) return false;
-
             String familyId = MagazineItem.getMagazineFamilyId(mag);
             if (familyId == null) return false;
 
             ResourceLocation familyAmmo = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
-            if (familyAmmo == null || !familyAmmo.equals(heldAmmoId)) return false;
+            if (familyAmmo == null) return false;
+            AbstractContainerMenu menu = getVisibleMenu(player);
+            if (menu == null) return false;
+            if (!player.getAbilities().instabuild
+                    && MagazineAmmoSource.compatibleAmmoId(menu.getCarried(), familyAmmo) == null) return false;
 
             return magItem.getAmmoCount(mag) < MagazineItem.getMaxCapacity(mag);
         }
@@ -241,31 +394,38 @@ public class MagazineLoadingHandler {
 
     // Returns true if player has at least one ammo stack compatible with the held magazine.
     private static boolean hasCompatibleAmmo(LocalPlayer player, ItemStack mag, MagazineItem magItem) {
+        if (player.getAbilities().instabuild) return true;
         String familyId = MagazineItem.getMagazineFamilyId(mag);
         if (familyId == null) return false;
         ResourceLocation familyAmmo = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
         if (familyAmmo == null) return false;
         ResourceLocation magAmmoId = magItem.getAmmoId(mag);
 
-        for (ItemStack s : player.getInventory().items) {
-            if (s.isEmpty() || !(s.getItem() instanceof IAmmo iAmmo)) continue;
-            ResourceLocation ammoId = iAmmo.getAmmoId(s);
-            if (DefaultAssets.EMPTY_AMMO_ID.equals(ammoId)) continue;
-            if (!familyAmmo.equals(ammoId)) continue;
+        for (ItemStack source : player.getInventory().items) {
+            ResourceLocation ammoId = MagazineAmmoSource.compatibleAmmoId(source, familyAmmo);
+            if (ammoId == null) continue;
             if (!DefaultAssets.EMPTY_AMMO_ID.equals(magAmmoId) && !magAmmoId.equals(ammoId)) continue;
-            return true;
+            if (MagazineAmmoSource.available(source) > 0) return true;
         }
         return false;
     }
 
-    // ── Block left-clicks in inventory during active unload session ───────────
+    // ── Cancel inventory unloading when the player clicks elsewhere ──────────
 
     @SubscribeEvent
     public static void onMouseButtonPressed(ScreenEvent.MouseButtonPressed.Pre event) {
-        if (!active || !unloading) return;
-        if (event.getButton() == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
-            event.setCanceled(true);
+        unloadActiveBeforeMousePress = active && unloading;
+    }
+
+    @SubscribeEvent
+    public static void onMouseButtonPressed(ScreenEvent.MouseButtonPressed.Post event) {
+        // Waiting until Post lets a right-click on the active magazine use its
+        // normal toggle handler first. A click on any other slot leaves the
+        // session active, so cancel it here while allowing that click through.
+        if (unloadActiveBeforeMousePress && active && unloading) {
+            cancel();
         }
+        unloadActiveBeforeMousePress = false;
     }
 
     // ── Attack key while holding a magazine: cancel block-break + arm-swing ──

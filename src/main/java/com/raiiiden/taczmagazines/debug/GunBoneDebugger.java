@@ -16,12 +16,7 @@ import java.util.Optional;
 @OnlyIn(Dist.CLIENT)
 public class GunBoneDebugger {
 
-    /**
-     * Dumps the bone hierarchy of the gun currently held in the main hand to the log.
-     * Triggered by {@code /magazine bonedebug} (client-side command).
-     *
-     * @return a short status string suitable for feedback in chat
-     */
+    // Logs the held gun's bone hierarchy and returns a chat status.
     public static String run() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return "No player found.";

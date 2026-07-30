@@ -1,6 +1,7 @@
 package com.raiiiden.taczmagazines.network;
 
 import com.raiiiden.taczmagazines.item.MagazineItem;
+import com.raiiiden.taczmagazines.item.SoundRegistrar;
 import com.tacz.guns.api.DefaultAssets;
 import com.tacz.guns.api.item.builder.AmmoItemBuilder;
 import net.minecraft.network.FriendlyByteBuf;
@@ -60,6 +61,7 @@ public class UnloadOneFromHandPacket {
 
             player.getInventory().setChanged();
             player.containerMenu.broadcastChanges();
+            SoundRegistrar.playMagazineUnload(player);
         });
         ctx.get().setPacketHandled(true);
     }

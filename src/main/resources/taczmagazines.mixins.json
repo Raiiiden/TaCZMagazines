@@ -5,11 +5,13 @@
   "refmap": "taczmagazines.refmap.json",
   "mixins": [
     "MixinAbstractGunItem",
+    "MixinAmmoBoxItem",
     "MixinAttachmentDataUtils",
     "MixinLivingEntity"
   ],
   "client": [
     "MixinReloadKey",
+    "MixinGunSmithTableScreen",
     "MixinGunHudOverlay",
     "MixinClientGunTooltip",
     "MixinGunAnimationStateContext",

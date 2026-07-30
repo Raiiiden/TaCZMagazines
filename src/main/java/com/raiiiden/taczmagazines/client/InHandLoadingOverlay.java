@@ -49,15 +49,11 @@ public class InHandLoadingOverlay {
 
         float progress = MagazineLoadingHandler.inHandProgress;
 
-        // Lock the ring to its scale-3 size by scaling the pose around the slot centre before we
-        // capture the matrix used for the raw vertex arcs below.
-        var pose = event.getGuiGraphics().pose();
-        float scaleFactor = HudScaleUtil.lockFactor();
-        pose.pushPose();
-        pose.translate(cx, cy, 0f);
-        pose.scale(scaleFactor, scaleFactor, 1f);
-        pose.translate(-cx, -cy, 0f);
-        Matrix4f matrix = pose.last().pose();
+        // GUI coordinates already scale together with the vanilla hotbar.
+        // Drawing directly in that coordinate space preserves the scale-3
+        // proportions relative to the 20x20 slot at every GUI scale and
+        // framebuffer resolution.
+        Matrix4f matrix = event.getGuiGraphics().pose().last().pose();
 
         RenderSystem.setShader(GameRenderer::getPositionColorShader);
         RenderSystem.enableBlend();
@@ -76,7 +72,6 @@ public class InHandLoadingOverlay {
         RenderSystem.enableDepthTest();
         RenderSystem.disableBlend();
 
-        pose.popPose();
     }
 
     private static void drawArc(Matrix4f matrix, float cx, float cy,

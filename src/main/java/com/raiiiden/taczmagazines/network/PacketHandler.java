@@ -46,5 +46,6 @@ public class PacketHandler {
                 UnloadOneFromHandPacket::encode,
                 UnloadOneFromHandPacket::decode,
                 UnloadOneFromHandPacket::handle);
+
     }
 }

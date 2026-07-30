@@ -1,12 +1,15 @@
 package com.raiiiden.taczmagazines.magazine;
 
 import com.raiiiden.taczmagazines.TaCZMagazines;
+import com.tacz.guns.api.TimelessAPI;
 import com.tacz.guns.resource.CommonAssetsManager;
 import com.tacz.guns.resource.ICommonResourceProvider;
 import com.tacz.guns.resource.index.CommonGunIndex;
 import com.tacz.guns.api.item.gun.FireMode;
 import com.tacz.guns.resource.pojo.data.gun.Bolt;
 import com.tacz.guns.resource.pojo.data.gun.FeedType;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.*;
@@ -326,7 +329,7 @@ public class MagazineFamilySystem {
         }
     }
 
-    // Forces a gun to belong to a specific magazine family, replacing any auto-discovered mapping. */
+    // Replaces a gun's discovered magazine family.
     public static void overrideGunFamily(ResourceLocation gunId, String targetFamilyId) {
         // Remove from whichever family it currently belongs to
         String currentFamily = GUN_TO_FAMILY.remove(gunId);
@@ -391,6 +394,31 @@ public class MagazineFamilySystem {
             }
         }
         return null;
+    }
+
+    public static String getAmmoDisplayName(ResourceLocation ammoId) {
+        if (ammoId != null) {
+            String translationKey = TimelessAPI.getCommonAmmoIndex(ammoId)
+                    .map(index -> index.getPojo().getName())
+                    .orElse(null);
+            if (translationKey != null && !translationKey.isBlank()) {
+                String translated = ChatFormatting.stripFormatting(
+                        Component.translatable(translationKey).getString());
+                if (translated != null && !translated.isBlank()) {
+                    return translated.trim()
+                            .replaceFirst("(?i)\\s+(bullet|ammo|ammunition)$", "");
+                }
+            }
+            return ammoId.getPath().replace('_', ' ').toUpperCase();
+        }
+        return "UNKNOWN";
+    }
+
+    private static String getFamilyAmmoDisplayName(String familyId) {
+        ResourceLocation ammoId = getAmmoTypeForFamily(familyId);
+        return ammoId != null
+                ? getAmmoDisplayName(ammoId)
+                : getBaseAmmoType(familyId).toUpperCase();
     }
 
     // Parses the capacity from a family ID — handles base, extended, and isolated formats
@@ -494,14 +522,14 @@ public class MagazineFamilySystem {
             String base = extIdx > 0 ? familyId.substring(0, extIdx) : familyId;
             int lastUs = base.lastIndexOf('_');
             if (lastUs > 0) {
-                String ammoType = base.substring(0, lastUs).toUpperCase();
+                String ammoType = getFamilyAmmoDisplayName(familyId);
                 String capacity = base.substring(lastUs + 1);
                 return String.format("%s %s-Round Extended %s Magazine", ammoType, capacity, roman[level - 1]);
             }
         }
         int lastUnderscore = familyId.lastIndexOf('_');
         if (lastUnderscore > 0) {
-            String ammoType = familyId.substring(0, lastUnderscore).toUpperCase();
+            String ammoType = getFamilyAmmoDisplayName(familyId);
             String capacity = familyId.substring(lastUnderscore + 1);
             return String.format("%s %s-Round Magazine", ammoType, capacity);
         }

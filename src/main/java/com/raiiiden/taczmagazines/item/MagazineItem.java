@@ -3,7 +3,6 @@ package com.raiiiden.taczmagazines.item;
 import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.DefaultAssets;
-import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IAmmoBox;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.api.item.builder.AmmoItemBuilder;
@@ -13,7 +12,6 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -186,17 +184,17 @@ public class MagazineItem extends Item implements IAmmoBox {
         if (action != ClickAction.SECONDARY) return false;
         if (!isPlayerInventorySlot(slot, player)) return false;
 
-        ItemStack other = slot.getItem();
-        if (!(other.getItem() instanceof IAmmo iAmmo)) return false;
-
-        ResourceLocation heldAmmoId = iAmmo.getAmmoId(other);
-        if (heldAmmoId.equals(DefaultAssets.EMPTY_AMMO_ID)) return false;
-
         String familyId = getMagazineFamilyId(stack);
         if (familyId == null) return false;
 
         ResourceLocation familyAmmo = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
-        if (familyAmmo == null || !familyAmmo.equals(heldAmmoId)) return false;
+        if (familyAmmo == null) return false;
+
+        ItemStack other = slot.getItem();
+        ResourceLocation heldAmmoId = player.getAbilities().instabuild
+                ? familyAmmo
+                : MagazineAmmoSource.compatibleAmmoId(other, familyAmmo);
+        if (heldAmmoId == null || heldAmmoId.equals(DefaultAssets.EMPTY_AMMO_ID)) return false;
 
         ResourceLocation magAmmoId = this.getAmmoId(stack);
         if (!magAmmoId.equals(DefaultAssets.EMPTY_AMMO_ID) && !heldAmmoId.equals(magAmmoId)) return false;
@@ -205,10 +203,14 @@ public class MagazineItem extends Item implements IAmmoBox {
         int magAmmoCount = this.getAmmoCount(stack);
         if (magAmmoCount >= maxCapacity) return false;
 
-        if (player.level().isClientSide) return true;
+        // Creative inventory clicks are executed locally and synchronized as
+        // slot updates instead of being replayed through the normal server
+        // container-click path. Let the creative client perform the mutation.
+        if (player.level().isClientSide && !player.getAbilities().instabuild) return true;
 
         if (MechanicsConfig.TICK_BASED.get()) {
-            if (other.getCount() <= 0) return false;
+            if (!player.getAbilities().instabuild
+                    && MagazineAmmoSource.available(other) <= 0) return false;
 
             if (stack.getCount() > 1) {
                 ItemStack extras = stack.copy();
@@ -219,11 +221,15 @@ public class MagazineItem extends Item implements IAmmoBox {
 
             this.setAmmoId(stack, heldAmmoId);
             this.setAmmoCount(stack, magAmmoCount + 1);
-            other.shrink(1);
+            if (!player.getAbilities().instabuild) {
+                MagazineAmmoSource.consume(other, 1);
+            }
             slot.setChanged();
         } else {
             int space    = maxCapacity - magAmmoCount;
-            int transfer = Math.min(other.getCount(), space);
+            int transfer = player.getAbilities().instabuild
+                    ? space
+                    : Math.min(MagazineAmmoSource.available(other), space);
             if (transfer <= 0) return false;
 
             if (stack.getCount() > 1) {
@@ -235,7 +241,9 @@ public class MagazineItem extends Item implements IAmmoBox {
 
             this.setAmmoId(stack, heldAmmoId);
             this.setAmmoCount(stack, magAmmoCount + transfer);
-            other.shrink(transfer);
+            if (!player.getAbilities().instabuild) {
+                MagazineAmmoSource.consume(other, transfer);
+            }
             slot.setChanged();
         }
 
@@ -248,7 +256,8 @@ public class MagazineItem extends Item implements IAmmoBox {
                                             Slot slot, ClickAction action,
                                             Player player, SlotAccess heldAccess) {
         boolean tickBased = MechanicsConfig.TICK_BASED.get();
-        if (!isPlayerInventorySlot(slot, player)) return false;
+        int magazineInventorySlot = findPlayerInventoryIndex(slot, magazine, player);
+        if (magazineInventorySlot < 0) return false;
 
         // ── Empty cursor ──────────────────────────────────────────────────────
         if (heldStack.isEmpty()) {
@@ -257,9 +266,18 @@ public class MagazineItem extends Item implements IAmmoBox {
             ResourceLocation ammoId = this.getAmmoId(magazine);
             if (ammoId.equals(DefaultAssets.EMPTY_AMMO_ID) || this.getAmmoCount(magazine) <= 0) return false;
 
+            // Drop-in creative unloading is performed locally because the
+            // creative inventory owns its carried stack. Tick-based unloading
+            // continues through the normal per-round session below.
+            if (player.getAbilities().instabuild && !tickBased) {
+                boolean unloaded = unloadAllCreative(magazine, player, heldAccess);
+                if (unloaded) slot.setChanged();
+                return unloaded;
+            }
+
             if (tickBased) {
                 if (player.level().isClientSide) {
-                    final int idx = slot.index;
+                    final int idx = magazineInventorySlot;
                     net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
                             net.minecraftforge.api.distmarker.Dist.CLIENT,
                             () -> () -> {
@@ -290,16 +308,16 @@ public class MagazineItem extends Item implements IAmmoBox {
         }
 
         // ── Held ammo ─────────────────────────────────────────────────────────
-        if (!(heldStack.getItem() instanceof IAmmo iAmmo)) return false;
-
-        ResourceLocation heldAmmoId = iAmmo.getAmmoId(heldStack);
-        if (heldAmmoId.equals(DefaultAssets.EMPTY_AMMO_ID)) return false;
-
         String familyId = getMagazineFamilyId(magazine);
         if (familyId == null) return false;
 
         ResourceLocation familyAmmoType = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
-        if (familyAmmoType == null || !familyAmmoType.equals(heldAmmoId)) return false;
+        if (familyAmmoType == null) return false;
+
+        ResourceLocation heldAmmoId = player.getAbilities().instabuild
+                ? familyAmmoType
+                : MagazineAmmoSource.compatibleAmmoId(heldStack, familyAmmoType);
+        if (heldAmmoId == null || heldAmmoId.equals(DefaultAssets.EMPTY_AMMO_ID)) return false;
 
         ResourceLocation magAmmoId = this.getAmmoId(magazine);
         if (!magAmmoId.equals(DefaultAssets.EMPTY_AMMO_ID) && !heldAmmoId.equals(magAmmoId)) return false;
@@ -308,10 +326,21 @@ public class MagazineItem extends Item implements IAmmoBox {
         int magAmmoCount = this.getAmmoCount(magazine);
         if (magAmmoCount >= maxCapacity) return false;
 
+        // Drop-in creative loading remains instant. With tick-based loading
+        // enabled, creative uses the same timed session as survival while
+        // waiving source-ammo requirements and consumption.
+        if (player.getAbilities().instabuild && !tickBased) {
+            this.setAmmoId(magazine, familyAmmoType);
+            this.setAmmoCount(magazine, maxCapacity);
+            slot.setChanged();
+            this.playInsertSound(player);
+            return true;
+        }
+
         if (tickBased) {
-            if (action == ClickAction.SECONDARY) {
+            if (action == ClickAction.PRIMARY) {
                 if (player.level().isClientSide) {
-                    final int idx = slot.index;
+                    final int idx = magazineInventorySlot;
                     net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
                             net.minecraftforge.api.distmarker.Dist.CLIENT,
                             () -> () -> {
@@ -335,8 +364,9 @@ public class MagazineItem extends Item implements IAmmoBox {
                     player.containerMenu.broadcastChanges();
                 }
                 return true;
-            } else if (action == ClickAction.PRIMARY) {
-                // Tick-based: left-click does nothing — consume the click, server does nothing.
+            } else if (action == ClickAction.SECONDARY) {
+                // Tick-based loading starts with left-click; consume
+                // right-click without moving either stack.
                 if (player.level().isClientSide) {
                     net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(
                             net.minecraftforge.api.distmarker.Dist.CLIENT,
@@ -385,20 +415,20 @@ public class MagazineItem extends Item implements IAmmoBox {
                              ResourceLocation ammoId, int current, int max,
                              Player player, SlotAccess heldAccess) {
         int space    = max - current;
-        int transfer = Math.min(heldStack.getCount(), space);
+            int transfer = Math.min(MagazineAmmoSource.available(heldStack), space);
         if (transfer <= 0) return false;
 
         if (magazine.getCount() == 1) {
             this.setAmmoId(magazine, ammoId);
             this.setAmmoCount(magazine, current + transfer);
-            heldStack.shrink(transfer);
+            MagazineAmmoSource.consume(heldStack, transfer);
         } else {
             ItemStack filledMag = magazine.copyWithCount(1);
             this.setAmmoId(filledMag, ammoId);
             this.setAmmoCount(filledMag, current + transfer);
             if (!player.getInventory().add(filledMag)) return false;
             magazine.shrink(1);
-            heldStack.shrink(transfer);
+            MagazineAmmoSource.consume(heldStack, transfer);
         }
 
         this.playInsertSound(player);
@@ -454,16 +484,86 @@ public class MagazineItem extends Item implements IAmmoBox {
         return true;
     }
 
+    private boolean unloadAllCreative(ItemStack magazine, Player player, SlotAccess heldAccess) {
+        ResourceLocation ammoId = this.getAmmoId(magazine);
+        int ammoCount = this.getAmmoCount(magazine);
+        if (ammoId.equals(DefaultAssets.EMPTY_AMMO_ID) || ammoCount <= 0) return false;
+
+        CompoundTag srcTag = magazine.getTag();
+        String familyId = srcTag != null && srcTag.contains(FAMILY_ID_TAG)
+                ? srcTag.getString(FAMILY_ID_TAG)
+                : null;
+        int maxCap = srcTag != null && srcTag.contains(MAX_CAPACITY_TAG)
+                ? srcTag.getInt(MAX_CAPACITY_TAG)
+                : -1;
+
+        ItemStack loadedExtras = ItemStack.EMPTY;
+        if (magazine.getCount() > 1) {
+            loadedExtras = magazine.copyWithCount(magazine.getCount() - 1);
+            magazine.setCount(1);
+        }
+
+        this.setAmmoCount(magazine, 0);
+        this.setAmmoId(magazine, DefaultAssets.EMPTY_AMMO_ID);
+        CompoundTag emptyTag = magazine.getOrCreateTag();
+        if (familyId != null) emptyTag.putString(FAMILY_ID_TAG, familyId);
+        if (maxCap >= 0) emptyTag.putInt(MAX_CAPACITY_TAG, maxCap);
+
+        if (!loadedExtras.isEmpty() && !player.getInventory().add(loadedExtras)) {
+            player.drop(loadedExtras, false);
+        }
+
+        ItemStack cursorAmmo = AmmoItemBuilder.create().setId(ammoId).setCount(1).build();
+        int cursorCount = Math.min(ammoCount, cursorAmmo.getMaxStackSize());
+        cursorAmmo.setCount(cursorCount);
+        heldAccess.set(cursorAmmo);
+
+        int remaining = ammoCount - cursorCount;
+        while (remaining > 0) {
+            ItemStack ammoStack = AmmoItemBuilder.create().setId(ammoId).setCount(1).build();
+            int give = Math.min(remaining, ammoStack.getMaxStackSize());
+            ammoStack.setCount(give);
+            if (!player.getInventory().add(ammoStack)) player.drop(ammoStack, false);
+            remaining -= give;
+        }
+
+        this.playRemoveOneSound(player);
+        return true;
+    }
+
     private void playRemoveOneSound(Entity entity) {
-        entity.playSound(SoundEvents.BUNDLE_REMOVE_ONE, 0.8F, 0.8F + entity.level().getRandom().nextFloat() * 0.4F);
+        SoundRegistrar.playMagazineUnload(entity);
     }
 
     private void playInsertSound(Entity entity) {
-        entity.playSound(SoundEvents.BUNDLE_INSERT, 0.8F, 0.8F + entity.level().getRandom().nextFloat() * 0.4F);
+        SoundRegistrar.playMagazineLoad(entity);
     }
 
     private static boolean isPlayerInventorySlot(Slot slot, Player player) {
-        return slot != null && slot.container == player.getInventory();
+        return slot != null
+                && findPlayerInventoryIndex(slot, slot.getItem(), player) >= 0;
+    }
+
+    private static int findPlayerInventoryIndex(Slot slot, ItemStack expected, Player player) {
+        if (slot == null) return -1;
+
+        // Inventory and creative screens may wrap/remap hotbar Slot objects.
+        // Resolve by the actual ItemStack reference first so the loading
+        // ticker always receives Player#getInventory() numbering (0-8 for the
+        // hotbar), rather than a menu or wrapper index.
+        if (!expected.isEmpty()) {
+            for (int i = 0; i < player.getInventory().items.size(); i++) {
+                if (player.getInventory().getItem(i) == expected) return i;
+            }
+        }
+
+        int inventoryIndex = slot.getSlotIndex();
+        if (slot.container == player.getInventory()
+                && inventoryIndex >= 0
+                && inventoryIndex < player.getInventory().items.size()) {
+            return inventoryIndex;
+        }
+        return -1;
     }
 
     @Override
@@ -550,7 +650,7 @@ public class MagazineItem extends Item implements IAmmoBox {
             }
         }
 
-        tooltip.add(Component.literal("Hold ammo + right-click magazine to fill  |  Right-click in hand to unload")
+        tooltip.add(Component.literal("Hold ammo + left-click magazine to fill  |  Right-click in hand to unload")
                 .withStyle(ChatFormatting.GOLD));
     }
 

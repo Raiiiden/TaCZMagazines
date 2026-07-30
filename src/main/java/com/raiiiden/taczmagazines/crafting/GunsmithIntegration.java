@@ -79,7 +79,7 @@ public class GunsmithIntegration {
         });
     }
 
-    // Builds the icon stack for the Magazines tab — an empty magazine of the first available family. */
+    // Builds the tab icon from the first available magazine family.
     private static ItemStack buildTabIcon() {
         for (String fid : MagazineFamilySystem.getAllFamilies()) {
             if (!MagazineFamilySystem.isExtendedFamily(fid)) {
@@ -139,23 +139,26 @@ public class GunsmithIntegration {
 
         int added = 0;
         for (String familyId : orderedFamilies) {
-            boolean isExtended = MagazineFamilySystem.isExtendedFamily(familyId);
+            MagazineRecipeOverrides.RecipeOverride recipeOverride = MagazineRecipeOverrides.get(familyId);
+            if (recipeOverride != null && !recipeOverride.enabled()) {
+                continue;
+            }
 
-            int count;
-            if (isExtended) {
-                int extLevel = MagazineFamilySystem.getExtLevelForFamily(familyId);
-                int baseCost = resolveIngredientCount(familyId, gunTypeMap);
-                count = baseCost + extLevel * 2;
+            List<GunSmithTableIngredient> inputs;
+            if (recipeOverride != null) {
+                inputs = recipeOverride.ingredients();
             } else {
-                count = resolveIngredientCount(familyId, gunTypeMap);
+                int count = resolveIngredientCount(familyId, gunTypeMap);
+                if (MagazineFamilySystem.isExtendedFamily(familyId)) {
+                    count += MagazineFamilySystem.getExtLevelForFamily(familyId) * 2;
+                }
+                inputs = List.of(new GunSmithTableIngredient(Ingredient.of(Items.IRON_INGOT), count));
             }
 
             ItemStack resultStack = MagazineItem.createMagazineByFamily(
                     MagazineRegistrar.MAGAZINE.get(), familyId, 0);
 
             GunSmithTableResult result = new GunSmithTableResult(resultStack, TAB_ID);
-            List<GunSmithTableIngredient> inputs = List.of(
-                    new GunSmithTableIngredient(Ingredient.of(Items.IRON_INGOT), count));
 
             // Zero-padded index prefix ensures lexicographic order == intended display order
             int sortIndex = orderedFamilies.indexOf(familyId);

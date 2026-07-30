@@ -1,15 +1,15 @@
 package com.raiiiden.taczmagazines.network;
 
 import com.raiiiden.taczmagazines.item.MagazineItem;
+import com.raiiiden.taczmagazines.item.MagazineAmmoSource;
+import com.raiiiden.taczmagazines.item.SoundRegistrar;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.DefaultAssets;
-import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.builder.AmmoItemBuilder;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 
@@ -18,18 +18,18 @@ import java.util.function.Supplier;
 // Transfers exactly one bullet to or from a magazine slot. Fired by the client loading-session ticker in tick-based mode.
 public class BulletTransferPacket {
 
-    private final int containerSlot;
+    private final int inventorySlot;
     private final boolean unload;
 
-    public BulletTransferPacket(int containerSlot, boolean unload) {
-        this.containerSlot = containerSlot;
+    public BulletTransferPacket(int inventorySlot, boolean unload) {
+        this.inventorySlot = inventorySlot;
         this.unload        = unload;
     }
 
     // -------------------------------------------------------------------------
 
     public static void encode(BulletTransferPacket msg, FriendlyByteBuf buf) {
-        buf.writeVarInt(msg.containerSlot);
+        buf.writeVarInt(msg.inventorySlot);
         buf.writeBoolean(msg.unload);
     }
 
@@ -43,12 +43,11 @@ public class BulletTransferPacket {
             if (player == null) return;
 
             AbstractContainerMenu menu = player.containerMenu;
-            if (menu == null || msg.containerSlot < 0 || msg.containerSlot >= menu.slots.size()) return;
+            if (menu == null
+                    || msg.inventorySlot < 0
+                    || msg.inventorySlot >= player.getInventory().items.size()) return;
 
-            Slot slot = menu.slots.get(msg.containerSlot);
-            if (slot.container != player.getInventory()) return;
-
-            ItemStack mag = slot.getItem();
+            ItemStack mag = player.getInventory().getItem(msg.inventorySlot);
             if (mag.isEmpty() || !(mag.getItem() instanceof MagazineItem magItem)) return;
 
             // If the slot holds a stack, split one off so only that single mag is modified.
@@ -58,13 +57,12 @@ public class BulletTransferPacket {
             ItemStack extras = ItemStack.EMPTY;
             if (mag.getCount() > 1) {
                 extras = mag.split(mag.getCount() - 1); // mag is now count=1 in-place
-                slot.setChanged();
             }
 
             if (msg.unload) {
-                handleUnload(player, menu, slot, mag, magItem);
+                handleUnload(player, menu, mag, magItem);
             } else {
-                handleLoad(player, menu, slot, mag, magItem);
+                handleLoad(player, menu, mag, magItem);
             }
 
             // Give back the unmodified remainder only after NBT has changed on the slot mag.
@@ -72,6 +70,7 @@ public class BulletTransferPacket {
                 if (!player.getInventory().add(extras)) player.drop(extras, false);
             }
 
+            player.getInventory().setChanged();
             menu.broadcastChanges();
         });
         ctx.get().setPacketHandled(true);
@@ -80,18 +79,20 @@ public class BulletTransferPacket {
     // ── Load one bullet: cursor → magazine ───────────────────────────────────
 
     private static void handleLoad(ServerPlayer player, AbstractContainerMenu menu,
-                                   Slot slot, ItemStack mag, MagazineItem magItem) {
+                                   ItemStack mag, MagazineItem magItem) {
         ItemStack cursor = menu.getCarried();
-        if (cursor.isEmpty() || !(cursor.getItem() instanceof IAmmo iAmmo)) return;
-
-        ResourceLocation heldAmmoId = iAmmo.getAmmoId(cursor);
-        if (DefaultAssets.EMPTY_AMMO_ID.equals(heldAmmoId)) return;
 
         // Ammo type must match the magazine family
         String familyId = MagazineItem.getMagazineFamilyId(mag);
         if (familyId == null) return;
         ResourceLocation familyAmmo = MagazineFamilySystem.getAmmoTypeForFamily(familyId);
-        if (familyAmmo == null || !familyAmmo.equals(heldAmmoId)) return;
+        if (familyAmmo == null) return;
+
+        boolean creative = player.getAbilities().instabuild;
+        ResourceLocation heldAmmoId = creative
+                ? familyAmmo
+                : MagazineAmmoSource.compatibleAmmoId(cursor, familyAmmo);
+        if (heldAmmoId == null || DefaultAssets.EMPTY_AMMO_ID.equals(heldAmmoId)) return;
 
         // Magazine ammo type must be empty or the same kind
         ResourceLocation magAmmoId = magItem.getAmmoId(mag);
@@ -103,16 +104,16 @@ public class BulletTransferPacket {
 
         magItem.setAmmoId(mag, heldAmmoId);
         magItem.setAmmoCount(mag, current + 1);
-        cursor.shrink(1);
+        if (!creative) MagazineAmmoSource.consume(cursor, 1);
 
-        slot.set(mag);
         menu.setCarried(cursor);
+        SoundRegistrar.playMagazineLoad(player);
     }
 
     // ── Unload one bullet: magazine → cursor/inventory ───────────────────────
 
     private static void handleUnload(ServerPlayer player, AbstractContainerMenu menu,
-                                     Slot slot, ItemStack mag, MagazineItem magItem) {
+                                     ItemStack mag, MagazineItem magItem) {
         int currentAmmo = magItem.getAmmoCount(mag);
         if (currentAmmo <= 0) return;
 
@@ -123,8 +124,6 @@ public class BulletTransferPacket {
         int newCount = currentAmmo - 1;
         magItem.setAmmoCount(mag, newCount);
         if (newCount == 0) magItem.setAmmoId(mag, DefaultAssets.EMPTY_AMMO_ID);
-        slot.set(mag);
-
         // Try to put the bullet on the cursor first
         ItemStack cursor = menu.getCarried();
         ItemStack bullet = AmmoItemBuilder.create().setId(ammoId).setCount(1).build();
@@ -142,5 +141,6 @@ public class BulletTransferPacket {
                 player.drop(bullet, false);
             }
         }
+        SoundRegistrar.playMagazineUnload(player);
     }
 }
