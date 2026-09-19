@@ -1,5 +1,6 @@
 package com.raiiiden.taczmagazines.network;
 
+import com.raiiiden.taczmagazines.magazine.SplitReloadGuns;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -41,9 +42,9 @@ public class SelectMagazinePacket {
                     gun.getOrCreateTag().remove("TaCZMag_CreativeReload");
                 }
                 if (msg.slot >= 0) {
-                    gun.getOrCreateTag().putInt("TaCZMag_SelectedSlot", msg.slot);
+                    gun.getOrCreateTag().putInt(SplitReloadGuns.SELECTED_SLOT_TAG, msg.slot);
                 } else {
-                    gun.getOrCreateTag().remove("TaCZMag_SelectedSlot");
+                    gun.getOrCreateTag().remove(SplitReloadGuns.SELECTED_SLOT_TAG);
                 }
             }
         });

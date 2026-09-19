@@ -3,6 +3,7 @@ package com.raiiiden.taczmagazines.mixin;
 import com.raiiiden.taczmagazines.capability.GunMagazineProvider;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import com.raiiiden.taczmagazines.item.MagazineRegistrar;
+import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.magazine.GunMagazineInitializer;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.item.IGun;
@@ -12,6 +13,8 @@ import com.tacz.guns.item.GunTooltipPart;
 import com.tacz.guns.resource.index.CommonGunIndex;
 import com.tacz.guns.resource.pojo.data.gun.FeedType;
 import com.tacz.guns.util.AttachmentDataUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
@@ -37,6 +40,7 @@ public class MixinClientGunTooltip {
     @Shadow private Component ammoName;
     @Shadow private MutableComponent ammoCountText;
     @Shadow @Nullable private List<FormattedCharSequence> desc;
+    @Shadow private int maxWidth;
 
     @Unique private static Field taczMag$ammoField = null;
     @Unique private static boolean taczMag$reflectionInit = false;
@@ -56,6 +60,9 @@ public class MixinClientGunTooltip {
         String familyId = MagazineFamilySystem.getFamilyForGun(gunId);
         if (familyId == null) return;
 
+        // The ammo row alternates between TaCZ's loose-round entry and the magazine on a wall-clock phase.
+        if (!taczMag$magazinePhase()) return;
+
         ItemStack stored = taczMag$getStoredMagazine(gunStack);
         ItemStack magStack = stored.isEmpty()
                 ? MagazineItem.createMagazineByFamily(MagazineRegistrar.MAGAZINE.get(), familyId, 0)
@@ -71,6 +78,26 @@ public class MixinClientGunTooltip {
         int current = iGunLocal.getCurrentAmmoCount(gunStack);
         int max = AttachmentDataUtils.getAmmoCountWithAttachment(gunStack, gunIndex.getGunData());
         ammoCountText = Component.literal(current + "/" + max);
+
+        // Resize for the usually longer magazine name so the row stays inside the box.
+        taczMag$growToFit();
+    }
+
+    // Which half of the cycle is showing. Shared by every tooltip on screen so they stay in step.
+    @Unique
+    private static boolean taczMag$magazinePhase() {
+        int seconds = MechanicsConfig.TOOLTIP_CYCLE_SECONDS.get();
+        if (seconds <= 0) return true;
+        return (System.currentTimeMillis() / (seconds * 1000L)) % 2 == 0;
+    }
+
+    @Unique
+    private void taczMag$growToFit() {
+        Font font = Minecraft.getInstance().font;
+        if (font == null) return;
+        // Same 22px allowance for the item icon that getText() uses on this row.
+        if (ammoName != null) maxWidth = Math.max(maxWidth, font.width(ammoName) + 22);
+        if (ammoCountText != null) maxWidth = Math.max(maxWidth, font.width(ammoCountText) + 22);
     }
 
     @Unique

@@ -30,6 +30,8 @@ public final class GunMagazineInitializer {
 
         String baseFamily = MagazineFamilySystem.getFamilyForGun(gunId);
         if (baseFamily == null) return;
+        // Clips/speed loaders never sit in the gun, so return loose rounds only, not a new device.
+        if (SplitReloadGuns.isSplitReload(gunId)) return;
 
         int currentAmmo = iGun.getCurrentAmmoCount(gun);
         if (currentAmmo <= 0) return;

@@ -1,5 +1,6 @@
 package com.raiiiden.taczmagazines.item;
 
+import com.raiiiden.taczmagazines.TaCZMagazines;
 import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.item.IAmmoBox;
@@ -13,17 +14,27 @@ import net.minecraftforge.items.IItemHandlerModifiable;
 public final class MagazineReloadSource {
     private MagazineReloadSource() {}
 
-    public static ItemStack extract(IItemHandler inventory, ItemStack gun, int selectedSlot) {
-        ItemStack selected = extractSelected(inventory, gun, selectedSlot);
-        if (!selected.isEmpty()) return selected;
-
-        if (MechanicsConfig.PREFER_PLAYER_INVENTORY.get()) {
-            ItemStack direct = extractBestDirect(inventory, gun);
-            return direct.isEmpty() ? extractBestBoxed(inventory, gun) : direct;
+    // Automatic reloads only take a magazine fuller than minAmmo; an explicitly selected slot ignores it.
+    public static ItemStack extract(IItemHandler inventory, ItemStack gun, int selectedSlot,
+                                    int minAmmo) {
+        // A selector pick is authoritative: load exactly that magazine or nothing.
+        if (selectedSlot >= 0) {
+            ItemStack selected = extractSelected(inventory, gun, selectedSlot);
+            if (selected.isEmpty()) {
+                TaCZMagazines.LOGGER.debug(
+                        "Reload: selected slot {} holds no magazine this gun can take; loading nothing",
+                        selectedSlot);
+            }
+            return selected;
         }
 
-        ItemStack boxed = extractBestBoxed(inventory, gun);
-        return boxed.isEmpty() ? extractBestDirect(inventory, gun) : boxed;
+        if (MechanicsConfig.PREFER_PLAYER_INVENTORY.get()) {
+            ItemStack direct = extractBestDirect(inventory, gun, minAmmo);
+            return direct.isEmpty() ? extractBestBoxed(inventory, gun, minAmmo) : direct;
+        }
+
+        ItemStack boxed = extractBestBoxed(inventory, gun, minAmmo);
+        return boxed.isEmpty() ? extractBestDirect(inventory, gun, minAmmo) : boxed;
     }
 
     public static boolean hasUsableMagazine(IItemHandler inventory, ItemStack gun) {
@@ -89,9 +100,9 @@ public final class MagazineReloadSource {
         return result;
     }
 
-    private static ItemStack extractBestDirect(IItemHandler inventory, ItemStack gun) {
+    private static ItemStack extractBestDirect(IItemHandler inventory, ItemStack gun, int minAmmo) {
         int bestSlot = -1;
-        int bestAmmo = 0;
+        int bestAmmo = minAmmo;
         for (int i = 0; i < inventory.getSlots(); i++) {
             ItemStack stack = inventory.getStackInSlot(i);
             if (!isUsableDirect(stack, gun)) continue;
@@ -104,14 +115,19 @@ public final class MagazineReloadSource {
         return bestSlot < 0 ? ItemStack.EMPTY : inventory.extractItem(bestSlot, 1, false);
     }
 
-    private static ItemStack extractBestBoxed(IItemHandler inventory, ItemStack gun) {
+    private static ItemStack extractBestBoxed(IItemHandler inventory, ItemStack gun, int minAmmo) {
         int bestBoxSlot = -1;
-        int bestAmmo = 0;
+        int bestAmmo = minAmmo;
 
         for (int i = 0; i < inventory.getSlots(); i++) {
             ItemStack box = inventory.getStackInSlot(i);
             if (isAllTypeCreativeBox(box)) {
-                return createFullMagazineForGun(gun);
+                ItemStack created = createFullMagazineForGun(gun);
+                if (created.getItem() instanceof MagazineItem createdItem
+                        && createdItem.getAmmoCount(created) > minAmmo) {
+                    return created;
+                }
+                continue;
             }
 
             ItemStack magazine = AmmoBoxMagazineStorage.peekBestCompatible(box, gun);

@@ -7,7 +7,9 @@
     "MixinAbstractGunItem",
     "MixinAmmoBoxItem",
     "MixinAttachmentDataUtils",
-    "MixinLivingEntity"
+    "MixinLivingEntity",
+    "MixinModernKineticGunItem",
+    "MixinModernKineticGunScriptAPI"
   ],
   "client": [
     "MixinReloadKey",

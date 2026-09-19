@@ -29,6 +29,9 @@ public class MagazineFamilySystem {
     // One gun can belong to multiple extended families (one per level)
     private static final Map<ResourceLocation, List<String>> GUN_TO_EXT_FAMILIES = new HashMap<>();
 
+    // Families every gun of which is split-reload, and what to call their loading device.
+    private static final Map<String, String> FAMILY_DEVICE_NOUN = new HashMap<>();
+
     // Isolated gun families — keyed by solo_ family ID, value is the capacity of that family
     private static final Map<String, Integer> ISOLATED_FAMILY_CAPACITY = new HashMap<>();
     // Family IDs that were created by isolation (base only, not extended)
@@ -43,6 +46,8 @@ public class MagazineFamilySystem {
         GUN_TO_EXT_FAMILIES.clear();
         ISOLATED_FAMILY_CAPACITY.clear();
         ISOLATED_BASE_FAMILIES.clear();
+        FAMILY_DEVICE_NOUN.clear();
+        SplitReloadGuns.clear();
 
         // Use get() instead of getInstance() so that on a dedicated-server client the
         // CommonNetworkCache (populated via ServerMessageSyncGunPack) is used rather
@@ -52,6 +57,8 @@ public class MagazineFamilySystem {
             TaCZMagazines.LOGGER.warn("Cannot discover magazine families - no gun data available yet");
             return;
         }
+
+        SpeedLoaderRevolvers.scan(assetsManager.getAllGuns());
 
         Map<String, List<ResourceLocation>> groupedGuns = new HashMap<>();
         // Extended: familyId -> guns, familyId -> level
@@ -63,6 +70,8 @@ public class MagazineFamilySystem {
             CommonGunIndex index = entry.getValue();
 
             if (!isCompatibleGun(index, gunId)) continue;
+
+            if (SplitReloadGuns.isSplitReloadData(index, gunId)) SplitReloadGuns.register(gunId);
 
             // Base family
             String familyId = createFamilyId(index);
@@ -94,8 +103,15 @@ public class MagazineFamilySystem {
             guns.sort(Comparator.comparing(ResourceLocation::toString));
             FAMILY_REPRESENTATIVE.put(familyId, guns.get(0));
 
-            TaCZMagazines.LOGGER.info("Discovered magazine family '{}' with {} compatible guns", familyId, guns.size());
+            // Name the device after the family only if every gun is split-reload.
+            String noun = resolveDeviceNoun(guns);
+            if (noun != null) FAMILY_DEVICE_NOUN.put(familyId, noun);
+
+            TaCZMagazines.LOGGER.info("Discovered magazine family '{}' with {} compatible guns{}",
+                    familyId, guns.size(), noun == null ? "" : " (" + noun + ")");
         }
+
+        SplitReloadGuns.reportDiscovery();
 
         // Register extended families
         for (Map.Entry<String, List<ResourceLocation>> entry : extGroupedGuns.entrySet()) {
@@ -120,6 +136,41 @@ public class MagazineFamilySystem {
 
         TaCZMagazines.LOGGER.info("Total magazine families: {} base + {} extended",
                 groupedGuns.size(), EXTENDED_FAMILIES.size());
+    }
+
+    // "Speed Loader"/"Stripper Clip"/"Clip" when the whole family is split-reload or speed-loader revolvers, else null.
+    private static String resolveDeviceNoun(List<ResourceLocation> guns) {
+        String noun = null;
+        for (ResourceLocation gunId : guns) {
+            CommonGunIndex index = TimelessAPI.getCommonGunIndex(gunId).orElse(null);
+            String candidate;
+            if (SplitReloadGuns.isSplitReloadData(index, gunId)) {
+                // isSplitReloadData can answer from a config override with no index behind it.
+                if (index == null || index.getGunData() == null) return "Clip";
+                candidate = SplitReloadGuns.deviceNoun(index, index.getGunData().getScriptParam());
+            } else if (SpeedLoaderRevolvers.isSpeedLoaderRevolver(gunId)) {
+                candidate = "Speed Loader";
+            } else {
+                return null;
+            }
+            // Guns that disagree fall back to the generic word rather than picking a side.
+            if (noun == null) noun = candidate;
+            else if (!noun.equals(candidate)) noun = "Clip";
+        }
+        return noun;
+    }
+
+    // Item name: "Magazine" or the split-reload family's loading device.
+    public static String getFamilyDeviceNoun(String familyId) {
+        String noun = FAMILY_DEVICE_NOUN.get(familyId);
+        if (noun != null) return noun;
+        // An extended or isolated family inherits from the base family it was derived from.
+        int extIdx = familyId.lastIndexOf("_ext");
+        if (extIdx > 0) {
+            noun = FAMILY_DEVICE_NOUN.get(familyId.substring(0, extIdx));
+            if (noun != null) return noun;
+        }
+        return "Magazine";
     }
 
     private static String createFamilyId(CommonGunIndex gunIndex) {
@@ -168,34 +219,26 @@ public class MagazineFamilySystem {
             return false;
         }
 
-        // Tube-fed shotguns and lever-actions load one round at a time; their scripts use
-        // "loop_feed" (the shell-loop timer) and/or numbered "round1_feed"/"round2_feed" keys.
-        // Stripper-clip guns use "clip_load_feed".  These are the only patterns that reliably
-        // signal incremental loading — a broad endsWith("_feed") check incorrectly rejects
-        // standard magazine guns that happen to have other *_feed script params (e.g. fire_feed).
+        // Round-by-round guns have no magazine unless they also have a bulk insert (clip/speed loader).
+        // SplitReloadGuns tells them apart from script_param timings.
         java.util.Map<String, Object> scriptParams = index.getGunData().getScriptParam();
-        if (scriptParams != null) {
-            boolean hasPerRoundFeed = scriptParams.containsKey("loop_feed")
-                    || scriptParams.containsKey("clip_load_feed")
-                    || scriptParams.keySet().stream().anyMatch(k -> k.matches("round\\d+_feed"));
-            if (hasPerRoundFeed) {
-                if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — has per-round feed script params (loop_feed/round#_feed/clip_load_feed)", gunId);
-                return false;
+        boolean roundByRound = SplitReloadGuns.loadsRoundByRound(scriptParams);
+        boolean splitReload = SplitReloadGuns.isSplitReloadData(index, gunId);
+        if (roundByRound && !splitReload) {
+            if (gunId != null) TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — loads round by round with no bulk insert to represent (tube-fed/lever)", gunId);
+            return false;
+        }
+        if (splitReload && !SplitReloadGuns.enabled()) {
+            if (gunId != null) {
+                SplitReloadGuns.countSkippedWhileDisabled();
+                TaCZMagazines.LOGGER.debug("[mag-filter] SKIP {} — split reload, and bulk_reload_requires_magazine is off", gunId);
             }
+            return false;
         }
 
-        // Revolvers are declared as ordinary "magazine"-type reloads with a single feed timer and
-        // no per-round feed script, so every check above passes them like a detachable-mag gun.
-        // The signal that separates them from every real magazine-fed gun is the action: revolvers
-        // are open-bolt AND semi-only. Every open-bolt gun that genuinely feeds from a magazine
-        // (uzi, m249, aa12, minigun, fn_evolys...) carries a full-auto or burst mode; the remaining
-        // open-bolt/semi-only guns are revolvers plus single-shot launchers/break-actions, and those
-        // are already excluded above by the capacity (<=2) and feed-type gates. This catches
-        // revolvers even when a pack gives them expandable "extended magazine" values (e.g.
-        // suffuse:python, ext [8,10,12] over a 6-round base) — which the old non-expandable-cylinder
-        // test missed. (TaCZ's `charging` block, the other revolver tell, is not exposed by the
-        // GunData API, so the fire-mode set stands in for it here.)
-        if (index.getGunData().getBolt() == Bolt.OPEN_BOLT) {
+        // A split reload or a speed loader in the reload animation proves a loading device, so don't let this fingerprint discard it.
+        if (index.getGunData().getBolt() == Bolt.OPEN_BOLT && !splitReload
+                && !SpeedLoaderRevolvers.isSpeedLoaderRevolver(gunId)) {
             List<FireMode> fireModes = index.getGunData().getFireModeSet();
             boolean rapidFire = fireModes != null && fireModes.stream()
                     .anyMatch(m -> m == FireMode.AUTO || m == FireMode.BURST);
@@ -277,6 +320,9 @@ public class MagazineFamilySystem {
             GUN_TO_FAMILY.put(gunId, soloId);
             FAMILY_REPRESENTATIVE.put(soloId, gunId);
             ISOLATED_FAMILY_CAPACITY.put(soloId, capacity);
+            // Carry the loading device across so isolated clip guns keep their item name.
+            String sharedNoun = FAMILY_DEVICE_NOUN.get(sharedFamily);
+            if (sharedNoun != null) FAMILY_DEVICE_NOUN.put(soloId, sharedNoun);
             ISOLATED_BASE_FAMILIES.add(soloId);
             TaCZMagazines.LOGGER.info("[IsolatedGun] '{}' → isolated family '{}'", gunId, soloId);
 
@@ -499,7 +545,7 @@ public class MagazineFamilySystem {
             if (sep > 0) {
                 String path = gunPart.substring(sep + 1).replace("_", " ");
                 String cap  = String.valueOf(getCapacityForFamily(familyId));
-                return String.format("%s %s-Round Solo Magazine", path.substring(0, 1).toUpperCase() + path.substring(1), cap);
+                return String.format("%s %s-Round Solo %s", path.substring(0, 1).toUpperCase() + path.substring(1), cap, getFamilyDeviceNoun(familyId));
             }
         }
         // Isolated extended family: solo_namespace_path_ext1
@@ -512,8 +558,9 @@ public class MagazineFamilySystem {
             int level = EXT_LEVEL_MAP.getOrDefault(familyId, 1);
             String[] roman = {"I", "II", "III"};
             String cap = String.valueOf(getCapacityForFamily(familyId));
-            return String.format("%s %s-Round Solo Extended %s Magazine",
-                    path.substring(0, 1).toUpperCase() + path.substring(1), cap, roman[Math.min(level - 1, 2)]);
+            return String.format("%s %s-Round Solo Extended %s %s",
+                    path.substring(0, 1).toUpperCase() + path.substring(1), cap, roman[Math.min(level - 1, 2)],
+                    getFamilyDeviceNoun(familyId));
         }
         if (EXTENDED_FAMILIES.contains(familyId)) {
             int level = EXT_LEVEL_MAP.getOrDefault(familyId, 1);
@@ -524,14 +571,14 @@ public class MagazineFamilySystem {
             if (lastUs > 0) {
                 String ammoType = getFamilyAmmoDisplayName(familyId);
                 String capacity = base.substring(lastUs + 1);
-                return String.format("%s %s-Round Extended %s Magazine", ammoType, capacity, roman[level - 1]);
+                return String.format("%s %s-Round Extended %s %s", ammoType, capacity, roman[level - 1], getFamilyDeviceNoun(familyId));
             }
         }
         int lastUnderscore = familyId.lastIndexOf('_');
         if (lastUnderscore > 0) {
             String ammoType = getFamilyAmmoDisplayName(familyId);
             String capacity = familyId.substring(lastUnderscore + 1);
-            return String.format("%s %s-Round Magazine", ammoType, capacity);
+            return String.format("%s %s-Round %s", ammoType, capacity, getFamilyDeviceNoun(familyId));
         }
         return familyId;
     }

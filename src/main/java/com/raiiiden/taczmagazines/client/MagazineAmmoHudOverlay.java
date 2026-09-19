@@ -5,6 +5,7 @@ import com.raiiiden.taczmagazines.TaCZMagazines;
 import com.raiiiden.taczmagazines.config.MechanicsConfig;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
+import com.raiiiden.taczmagazines.magazine.SplitReloadGuns;
 import com.tacz.guns.api.TimelessAPI;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.resource.index.CommonGunIndex;
@@ -67,6 +68,25 @@ public class MagazineAmmoHudOverlay {
 
     private static final float HUD_SCALE = 1.1f;
 
+    // Whether the silhouette row replaces TaCZ's ammo counter; shared with MixinGunHudOverlay.
+    public static boolean overridesHudFor(ItemStack gun) {
+        if (!MechanicsConfig.OVERRIDE_AMMO_HUD.get()) return false;
+        if (!(gun.getItem() instanceof IGun iGun)) return false;
+
+        ResourceLocation gunId = iGun.getGunId(gun);
+        CommonGunIndex index = TimelessAPI.getCommonGunIndex(gunId).orElse(null);
+        if (index == null) return false;
+        if (!index.getGunData().getReloadData().getType().equals(FeedType.MAGAZINE)) return false;
+        if (MagazineFamilySystem.getFamilyForGun(gunId) == null) return false;
+
+        // Clip/speed-loader guns are often topped up from loose rounds, so silhouettes misstate their reserve.
+        if (SplitReloadGuns.isSplitReload(gunId)
+                && !MechanicsConfig.OVERRIDE_AMMO_HUD_FOR_SPLIT_RELOAD.get()) {
+            return false;
+        }
+        return true;
+    }
+
     @SubscribeEvent
     public static void onRenderOverlay(RenderGuiOverlayEvent.Post event) {
         if (!MechanicsConfig.OVERRIDE_AMMO_HUD.get()) return;
@@ -84,6 +104,7 @@ public class MagazineAmmoHudOverlay {
         if (gunIndex == null) return;
         if (!gunIndex.getGunData().getReloadData().getType().equals(FeedType.MAGAZINE)) return;
         if (MagazineFamilySystem.getFamilyForGun(gunId) == null) return;
+        if (!overridesHudFor(gun)) return;
 
         // ── loaded-mag data ────────────────────────────────────────────────
         int currentAmmo = iGun.getCurrentAmmoCount(gun);

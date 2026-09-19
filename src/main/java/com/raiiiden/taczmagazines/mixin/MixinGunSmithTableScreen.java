@@ -54,9 +54,9 @@ public abstract class MixinGunSmithTableScreen {
         cir.setReturnValue(magazine.isAmmoBoxOfGun(heldGun, output));
     }
 
-    // While holding a gun, shows only its compatible magazines and their tab.
+    // While holding a gun, puts its magazine tab first and opens on it, keeping TaCZ's ammo tabs.
     @Inject(method = "classifyRecipes", at = @At("TAIL"))
-    private void showOnlyCompatibleMagazines(CallbackInfo ci) {
+    private void putMagazinesFirstForHeldGun(CallbackInfo ci) {
         if (!isHeldGunAmmoWorkbench()) return;
 
         List<ResourceLocation> compatible =
@@ -65,14 +65,18 @@ public abstract class MixinGunSmithTableScreen {
         if (magazineTab == null) {
             magazineTab = findMagazineTab();
         }
+        if (compatible.isEmpty() || magazineTab == null) return;
 
-        recipes.clear();
-        recipeKeys.clear();
-        recipes.put(MAGAZINE_TAB, compatible);
-        if (magazineTab != null) {
-            recipeKeys.put(MAGAZINE_TAB, magazineTab);
+        // Reinsert so the magazine tab leads, keeping the ammo tabs in TaCZ's own order after it.
+        LinkedHashMap<ResourceLocation, TabConfig> reordered = new LinkedHashMap<>();
+        reordered.put(MAGAZINE_TAB, magazineTab);
+        for (Map.Entry<ResourceLocation, TabConfig> tab : recipeKeys.entrySet()) {
+            if (!MAGAZINE_TAB.equals(tab.getKey())) reordered.put(tab.getKey(), tab.getValue());
         }
+        recipeKeys.clear();
+        recipeKeys.putAll(reordered);
 
+        recipes.put(MAGAZINE_TAB, compatible);
         selectedType = MAGAZINE_TAB;
         selectedRecipeList = compatible;
     }

@@ -1,9 +1,11 @@
 package com.raiiiden.taczmagazines.mixin;
 
-import com.raiiiden.taczmagazines.config.MechanicsConfig;
+import com.raiiiden.taczmagazines.client.MagazineAmmoHudOverlay;
+import com.raiiiden.taczmagazines.magazine.SplitReloadGuns;
 import com.raiiiden.taczmagazines.item.MagazineItem;
 import com.raiiiden.taczmagazines.magazine.MagazineFamilySystem;
 import com.tacz.guns.api.TimelessAPI;
+import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IAmmoBox;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.client.gui.overlay.GunHudOverlay;
@@ -43,17 +45,20 @@ public class MixinGunHudOverlay {
 
         if (MagazineFamilySystem.getFamilyForGun(gunId) == null) return;
 
-        // Gun is in the magazine system — compute total rounds across all compatible mags,
-        // correctly accounting for stack size.
+        // Gun is in the magazine system: total rounds across compatible mags, respecting stack size.
+        boolean splitReload = SplitReloadGuns.isSplitReload(gunId);
         int total = 0;
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack slot = inventory.getItem(i);
-            if (!(slot.getItem() instanceof MagazineItem)) continue;
-            IAmmoBox iAmmoBox = (IAmmoBox) slot.getItem();
-            if (!iAmmoBox.isAmmoBoxOfGun(gunItem, slot)) continue;
-            int ammoPerMag = iAmmoBox.getAmmoCount(slot);
-            if (ammoPerMag > 0) {
-                total += ammoPerMag * slot.getCount();
+            if (slot.getItem() instanceof MagazineItem) {
+                IAmmoBox iAmmoBox = (IAmmoBox) slot.getItem();
+                if (!iAmmoBox.isAmmoBoxOfGun(gunItem, slot)) continue;
+                int ammoPerMag = iAmmoBox.getAmmoCount(slot);
+                if (ammoPerMag > 0) total += ammoPerMag * slot.getCount();
+            } else if (splitReload && slot.getItem() instanceof IAmmo ammo
+                    && ammo.isAmmoOfGun(gunItem, slot)) {
+                // Split-reload guns chamber loose rounds directly, so count them in the reserve.
+                total += slot.getCount();
             }
         }
 
@@ -94,15 +99,8 @@ public class MixinGunHudOverlay {
     }
 
     private static boolean isMagHudActive() {
-        if (!MechanicsConfig.OVERRIDE_AMMO_HUD.get()) return false;
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null) return false;
-        ItemStack gun = mc.player.getMainHandItem();
-        if (!(gun.getItem() instanceof IGun iGun)) return false;
-        ResourceLocation gunId = iGun.getGunId(gun);
-        CommonGunIndex index = TimelessAPI.getCommonGunIndex(gunId).orElse(null);
-        if (index == null) return false;
-        if (!index.getGunData().getReloadData().getType().equals(FeedType.MAGAZINE)) return false;
-        return MagazineFamilySystem.getFamilyForGun(gunId) != null;
+        return MagazineAmmoHudOverlay.overridesHudFor(mc.player.getMainHandItem());
     }
 }
